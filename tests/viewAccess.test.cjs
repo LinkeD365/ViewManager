@@ -29,6 +29,8 @@ const { dvService } = loadSource("src\\services\\dataverseService.tsx");
 const viewId = "33bc5942-dbee-ef11-be20-6045bded7daf";
 const user = { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", name: "Example user", principalType: "User", accessRightsMask: 1 };
 const team = { id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", name: "Example team", principalType: "Team", accessRightsMask: 1 };
+const newUser = { id: "cccccccc-cccc-cccc-cccc-cccccccccccc", name: "New user", isCurrentUser: false };
+const anotherUser = { id: "dddddddd-dddd-dddd-dddd-dddddddddddd", name: "Another user", isCurrentUser: false };
 const view = { id: viewId, name: "Test view", entityName: "account", tableName: "Account (account)", ownerId: user.id, ownerName: user.name, modifiedOn: "", description: "" };
 
 function createService(execute = async () => ({})) {
@@ -117,7 +119,7 @@ test("staging is local, zero is retained, restoring original values and discard 
   vm.stageViewAccess(user, 1);
   assert.equal(vm.hasAccessChanges, false);
   vm.stageViewAccess(team, 0);
-  assert.equal(vm.displayedViewAccess[1].accessRightsMask, 0);
+  assert.deepEqual(vm.displayedViewAccess.map((entry) => entry.id), [user.id]);
   vm.discardAccessChanges();
   assert.equal(vm.displayedViewAccess[1].accessRightsMask, 1);
   assert.equal(vm.accessNavigationLocked, false);
@@ -138,14 +140,13 @@ test("save writes only changed principals and reloads confirmed results", async 
       return [{ ...user, accessRightsMask: 3 }];
     },
   };
-  await vm.saveViewAccess(service);
+  assert.equal(await vm.saveViewAccess(service), true);
   assert.deepEqual(calls.map(([id, principal, mask]) => [id, principal.id, mask]), [[viewId, user.id, 3], [viewId, team.id, 0]]);
   assert.equal(vm.viewAccess.length, 1);
   assert.equal(vm.viewAccess[0].accessRightsMask, 3);
   assert.equal(vm.hasAccessChanges, false);
   assert.equal(vm.isSavingViewAccess, false);
-  assert.equal(vm.viewAccessSaveMessage, "Access changes saved.");
-  await vm.saveViewAccess(service);
+  assert.equal(await vm.saveViewAccess(service), false);
   assert.equal(calls.length, 2);
 });
 
@@ -165,7 +166,6 @@ test("partial failures preserve unsaved edits and retries do not repeat successf
   await assert.rejects(vm.saveViewAccess(service), /Example team.*Denied/);
   assert.equal(vm.pendingAccess.size, 1);
   assert.equal(vm.viewAccess[0].accessRightsMask, 3);
-  assert.equal(vm.viewAccessSaveMessage, null);
   assert.equal(vm.isSavingViewAccess, false);
   failTeam = false;
   await vm.saveViewAccess(service);
@@ -182,7 +182,6 @@ test("reload failure reports saved changes accurately without retrying writes", 
   }), /were saved, but reloading access failed/);
   assert.equal(vm.hasAccessChanges, false);
   assert.equal(vm.viewAccess[0].accessRightsMask, 3);
-  assert.equal(vm.viewAccessSaveMessage, null);
   assert.equal(vm.accessNavigationLocked, false);
 });
 
@@ -202,12 +201,192 @@ test("pending edits block navigation; in-flight saves block duplicate writes and
   };
   const saving = vm.saveViewAccess(service);
   assert.equal(vm.isSavingViewAccess, true);
-  await vm.saveViewAccess(service);
+  assert.equal(await vm.saveViewAccess(service), false);
   assert.equal(calls, 1);
   assert.throws(() => vm.stageViewAccess(user, 1), /finish saving/);
   assert.throws(() => vm.discardAccessChanges(), /finish saving/);
   wait.resolve();
   await saving;
+});
+
+test("stale reloads and saves without a selection do not report success", async () => {
+  const vm = createModel();
+  vm.clearSelectedView();
+  assert.equal(await vm.saveViewAccess({}), false);
+  vm.selectedView = view;
+  vm.viewAccess = [user];
+  vm.stageViewAccess(user, 3);
+  const reload = deferred();
+  const reloadStarted = deferred();
+  const saving = vm.saveViewAccess({
+    updateViewAccess: async () => {},
+    getViewAccess: async () => {
+      reloadStarted.resolve();
+      return reload.promise;
+    },
+  });
+  await reloadStarted.promise;
+  vm.clearSelectedView();
+  reload.resolve([{ ...user, accessRightsMask: 3 }]);
+  assert.equal(await saving, false);
+  assert.equal(vm.viewAccess.length, 0);
+});
+
+test("GrantAccess uses a typed user and mask, and rejects empty grants", async () => {
+  let request;
+  const { service, logs } = createService(async (value) => { request = value; return {}; });
+  await service.grantViewAccess(viewId, { ...user, id: newUser.id }, 3);
+  assert.equal(request.operationName, "GrantAccess");
+  assert.deepEqual(request.parameters, {
+    Target: { "@odata.type": "Microsoft.Dynamics.CRM.userquery", userqueryid: viewId },
+    PrincipalAccess: {
+      Principal: { "@odata.type": "Microsoft.Dynamics.CRM.systemuser", systemuserid: newUser.id },
+      AccessMask: "ReadAccess,WriteAccess",
+    },
+  });
+  await assert.rejects(service.grantViewAccess(viewId, user, 0), /at least one permission/);
+  assert.match(logs[0][0], /GrantAccess/);
+});
+
+test("user picker excludes existing and pending users regardless of ID casing", async () => {
+  const vm = createModel();
+  vm.activeUsers = [{ ...user, id: user.id.toUpperCase(), isCurrentUser: false }, newUser, anotherUser];
+  assert.deepEqual(vm.availableAccessUsers.map((entry) => entry.id), [newUser.id, anotherUser.id]);
+  vm.beginAddAccessUser();
+  assert.equal(vm.hasNewUserRow, true);
+  assert.equal(vm.accessNavigationLocked, true);
+  await assert.rejects(vm.saveViewAccess({}), /Choose a user/);
+  assert.throws(() => vm.selectAccessUser(user.id), /already in the access grid/);
+  vm.selectAccessUser(newUser.id.toUpperCase());
+  assert.equal(vm.hasNewUserRow, false);
+  assert.equal(vm.displayedViewAccess[2].accessRightsMask, 1);
+  assert.deepEqual(vm.availableAccessUsers.map((entry) => entry.id), [anotherUser.id]);
+  vm.beginAddAccessUser();
+  assert.throws(() => vm.selectAccessUser(newUser.id), /already in the access grid/);
+  vm.cancelAddAccessUser();
+  assert.equal(vm.newViewAccess.length, 1);
+  vm.discardAccessChanges();
+  assert.equal(vm.newViewAccess.length, 0);
+  assert.equal(vm.accessNavigationLocked, false);
+});
+
+test("new user rights can be changed or removed locally and reset on connection changes", () => {
+  const vm = createModel();
+  vm.activeUsers = [newUser];
+  vm.beginAddAccessUser();
+  vm.selectAccessUser(newUser.id);
+  const added = vm.newViewAccess[0];
+  vm.stageViewAccess(added, 3);
+  assert.equal(vm.displayedViewAccess[2].accessRightsMask, 3);
+  assert.notEqual(vm.newViewAccess[0], added);
+  vm.stageViewAccess(added, 0);
+  assert.equal(vm.hasAccessChanges, false);
+  assert.equal(vm.availableAccessUsers.length, 1);
+  vm.beginAddAccessUser();
+  vm.selectAccessUser(newUser.id);
+  vm.clearSelectedView();
+  assert.equal(vm.newViewAccess.length, 0);
+  assert.equal(vm.hasNewUserRow, false);
+  assert.throws(() => vm.beginAddAccessUser(), /records are ready/);
+});
+
+test("mixed saves update existing shares and grant new users; retry only grants remaining additions", async () => {
+  const vm = createModel();
+  vm.activeUsers = [newUser, anotherUser];
+  for (const entry of vm.activeUsers) {
+    vm.beginAddAccessUser();
+    vm.selectAccessUser(entry.id);
+  }
+  vm.stageViewAccess(user, 3);
+  const calls = [];
+  let fail = true;
+  const service = {
+    updateViewAccess: async (_id, principal, mask) => { calls.push(["update", principal.id, mask]); },
+    grantViewAccess: async (id, principal, mask) => {
+      assert.equal(id, viewId);
+      calls.push(["grant", principal.id, mask]);
+      if (principal.id === anotherUser.id && fail) throw new Error("Grant denied");
+    },
+    getViewAccess: async () => vm.viewAccess.slice(),
+  };
+  await assert.rejects(vm.saveViewAccess(service), /Grant denied/);
+  assert.deepEqual(vm.newViewAccess.map((entry) => entry.id), [anotherUser.id]);
+  assert.equal(vm.viewAccess.some((entry) => entry.id === newUser.id), true);
+  fail = false;
+  assert.equal(await vm.saveViewAccess(service), true);
+  assert.deepEqual(calls, [["update", user.id, 3], ["grant", newUser.id, 1], ["grant", anotherUser.id, 1], ["grant", anotherUser.id, 1]]);
+  assert.equal(vm.hasAccessChanges, false);
+});
+
+test("delete stages a full user revoke, supports discard and saves only that user", async () => {
+  const vm = createModel();
+  const original = { ...user, accessRightsMask: 61 };
+  vm.viewAccess = [original, team];
+  vm.removeViewAccess(original);
+  assert.equal(vm.viewAccess[0].accessRightsMask, 61);
+  assert.deepEqual(vm.displayedViewAccess.map((entry) => entry.id), [team.id]);
+  vm.discardAccessChanges();
+  assert.equal(vm.displayedViewAccess[0].accessRightsMask, 61);
+  vm.removeViewAccess(original);
+  const calls = [];
+  await vm.saveViewAccess({
+    updateViewAccess: async (...args) => { calls.push(args); },
+    getViewAccess: async () => [team],
+  });
+  assert.deepEqual(calls.map(([id, principal, mask]) => [id, principal.id, mask]), [[viewId, user.id, 0]]);
+  assert.deepEqual(vm.viewAccess.map((entry) => entry.id), [team.id]);
+  assert.equal(vm.hasAccessChanges, false);
+});
+
+test("failed removal stays hidden and pending until discard restores the row", async () => {
+  const vm = createModel();
+  vm.removeViewAccess(user);
+  await assert.rejects(vm.saveViewAccess({
+    updateViewAccess: async () => { throw new Error("Revoke denied"); },
+  }), /Revoke denied/);
+  assert.deepEqual(vm.displayedViewAccess.map((entry) => entry.id), [team.id]);
+  assert.equal(vm.viewAccess[0].accessRightsMask, 1);
+  assert.equal(vm.hasAccessChanges, true);
+  vm.discardAccessChanges();
+  assert.deepEqual(vm.displayedViewAccess.map((entry) => entry.id), [user.id, team.id]);
+});
+
+test("re-adding a removed user displays only the new row and revokes before granting", async () => {
+  const vm = createModel();
+  vm.activeUsers = [{ id: user.id, name: user.name, isCurrentUser: false }];
+  vm.removeViewAccess(user);
+  vm.beginAddAccessUser();
+  vm.selectAccessUser(user.id);
+  assert.equal(vm.displayedViewAccess.filter((entry) => entry.id === user.id).length, 1);
+  const calls = [];
+  await vm.saveViewAccess({
+    updateViewAccess: async (_id, principal, mask) => calls.push(["revoke", principal.id, mask]),
+    grantViewAccess: async (_id, principal, mask) => calls.push(["grant", principal.id, mask]),
+    getViewAccess: async () => [user, team],
+  });
+  assert.deepEqual(calls, [["revoke", user.id, 0], ["grant", user.id, 1]]);
+});
+
+test("delete of a pending new user cancels addition without any server call", async () => {
+  const vm = createModel();
+  vm.activeUsers = [newUser];
+  vm.beginAddAccessUser();
+  vm.selectAccessUser(newUser.id);
+  vm.removeViewAccess(vm.newViewAccess[0]);
+  assert.equal(vm.newViewAccess.length, 0);
+  assert.equal(vm.availableAccessUsers.length, 1);
+  assert.equal(await vm.saveViewAccess({}), false);
+});
+
+test("delete rejects teams, stale users and changes during saving", () => {
+  const vm = createModel();
+  assert.throws(() => vm.removeViewAccess(team), /Select a user/);
+  assert.throws(() => vm.removeViewAccess({ ...user, id: newUser.id }), /no longer/);
+  vm.isSavingViewAccess = true;
+  assert.throws(() => vm.removeViewAccess(user), /finish saving/);
+  vm.isSavingViewAccess = false;
+  vm.clearSelectedView();
+  assert.throws(() => vm.removeViewAccess(user), /Select a user/);
 });
 
 test("connection reset stops remaining writes and never restores stale access", async () => {

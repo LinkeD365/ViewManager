@@ -29,11 +29,17 @@ props:
 | [ViewStudioHeader](src/components/viewStudioHeader.tsx) | Searchable owner filter and refresh action |
 | [PersonalViewsGrid](src/components/personalViewsGrid.tsx) | View columns, sorting, pagination and selection |
 | [ViewAccessPanel](src/components/viewAccessPanel.tsx) | Sharing records, save/discard actions and status |
-| [ViewAccessEditor](src/components/viewAccessEditor.tsx) | Permission multi-select dialog |
+| [ViewAccessEditor](src/components/viewAccessEditor.tsx) | Compact permission multi-select list box in a dialog |
+| [ViewAccessUserPicker](src/components/viewAccessUserPicker.tsx) | Searchable user selection for a new access row |
 
 Controls do not call Dataverse directly. Their interfaces remain in the
 view-model module. Fluent dropdowns use `inlinePopup`; the header's positioned
 stacking layer keeps its owner picker above the grids.
+
+The root `FluentProvider` sets `applyStylesToPortals={false}` so its full-screen
+layout classes are not copied to tooltip/dialog portal containers. Theme tokens
+are still provided, and tooltips use Fluent's default mounting behavior without
+per-control `document.body` overrides.
 
 ## Reading Dataverse data
 
@@ -86,8 +92,25 @@ The editor exposes only Read, Write, Delete, Share and Assign. Its selection
 mapping replaces those bits while preserving existing Create, Append and Append
 to bits. The grid and service still decode and serialize the full enum.
 
+The Add user action creates a pinned draft row and opens a searchable picker.
+Candidates reuse the active-user list and exclude loaded and pending direct
+user shares by case-insensitive ID. Selected users enter a separate pending
+additions collection with Read access. The placeholder row cannot be saved
+until a user is chosen; cancellation removes only the placeholder. Clearing a
+pending addition's mask removes it locally without issuing a revoke.
+
+The user-row Delete action stages a zero mask for the entire direct share,
+including hidden or unrecognized rights. Rows with pending zero masks are
+excluded from the displayed grid immediately, while their saved records remain
+available for revocation or restoration through Discard. It uses the same Save/Discard flow;
+unlike selective editing it deliberately revokes all direct rights. For an
+unsaved new user it removes the local addition without a Dataverse request.
+
 Saving calls `dataverseAPI.execute` with an unbound action:
 
+- [GrantAccess](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/reference/grantaccess?view=dataverse-latest)
+  for new users, with a typed target and `PrincipalAccess`. Successful additions
+  become saved rows immediately, so retries do not re-grant successful shares.
 - [ModifyAccess](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/reference/modifyaccess?view=dataverse-latest)
   for nonzero masks: `Target` identifies the `userquery`, and `PrincipalAccess`
   contains a typed user/team entity and comma-separated enum member names.
@@ -103,6 +126,11 @@ local saved state and removes only that pending edit. A failure stops the batch
 and keeps the remaining edits for retry. After all writes succeed, the model
 reloads sharing records. A reload failure is reported separately from a write
 failure so users are not told that successful changes failed to save.
+
+The model reports whether a save and reload completed for the current view.
+Only a confirmed result triggers the composition root's ToolBox success
+notification; no-op or stale saves do not. The unsaved-changes prompt is rendered
+below the access grid.
 
 ## State and error handling
 

@@ -70,6 +70,7 @@ export interface ViewDataService {
   getPersonalViews(ownerId: string | null): Promise<PersonalView[]>;
   getViewAccess(viewId: string): Promise<ViewAccess[]>;
   updateViewAccess(viewId: string, principal: ViewAccess, mask: number): Promise<void>;
+  grantViewAccess(viewId: string, principal: ViewAccess, mask: number): Promise<void>;
 }
 
 export interface dvServiceProps {
@@ -84,6 +85,7 @@ export interface ViewStudioProps {
   vm: ViewModel;
   onLog: (message: string, type?: "info" | "success" | "warning" | "error") => void;
   notifyError: (message: string) => void;
+  notifySuccess: (message: string) => void;
 }
 
 export interface ViewStudioHeaderProps {
@@ -109,10 +111,27 @@ export interface ViewAccessPanelProps {
   hasChanges: boolean;
   isSaving: boolean;
   saveError: string | null;
-  saveMessage: string | null;
   onChange: (principal: ViewAccess, mask: number) => void;
+  onRemove: (principal: ViewAccess) => void;
   onSave: () => Promise<void>;
   onDiscard: () => void;
+  availableUsers: ActiveUser[];
+  hasNewUserRow: boolean;
+  onAddUser: () => boolean;
+  onSelectUser: (userId: string) => void;
+  onCancelUser: () => void;
+}
+
+export interface NewViewAccessRow {
+  isNewUserRow: true;
+}
+
+export type ViewAccessGridRow = ViewAccess | NewViewAccessRow;
+
+export interface ViewAccessUserPickerProps {
+  users: ActiveUser[];
+  onSelect: (userId: string) => void;
+  onCancel: () => void;
 }
 
 export interface ViewAccessEditorProps {
@@ -135,9 +154,10 @@ export class ViewModel {
   isLoadingViewAccess = false;
   viewAccessError: string | null = null;
   pendingAccess = new Map<string, number>();
+  newViewAccess: ViewAccess[] = [];
+  hasNewUserRow = false;
   isSavingViewAccess = false;
   viewAccessSaveError: string | null = null;
-  viewAccessSaveMessage: string | null = null;
   private viewAccessRequest = 0;
   private usersRequest = 0;
   private personalViewsRequest = 0;
@@ -147,7 +167,7 @@ export class ViewModel {
   }
 
   get hasAccessChanges(): boolean {
-    return this.pendingAccess.size > 0;
+    return this.pendingAccess.size > 0 || this.newViewAccess.length > 0 || this.hasNewUserRow;
   }
 
   get accessNavigationLocked(): boolean {
@@ -155,14 +175,59 @@ export class ViewModel {
   }
 
   get displayedViewAccess(): ViewAccess[] {
-    return this.viewAccess.map((principal) => ({
-      ...principal,
-      accessRightsMask: this.pendingAccess.get(`${principal.principalType}:${principal.id}`) ?? principal.accessRightsMask,
-    }));
+    return [
+      ...this.viewAccess
+        .filter((principal) => this.pendingAccess.get(`${principal.principalType}:${principal.id}`) !== 0)
+        .map((principal) => ({
+          ...principal,
+          accessRightsMask: this.pendingAccess.get(`${principal.principalType}:${principal.id}`) ?? principal.accessRightsMask,
+        })),
+      ...this.newViewAccess,
+    ];
+  }
+
+  get availableAccessUsers(): ActiveUser[] {
+    const existing = new Set(this.displayedViewAccess
+      .filter((principal) => principal.principalType === "User")
+      .map((principal) => principal.id.toLowerCase()));
+    return this.activeUsers.filter((user) => !existing.has(user.id.toLowerCase()));
+  }
+
+  beginAddAccessUser(): void {
+    if (!this.selectedView || this.isLoadingViewAccess || this.viewAccessError || this.isSavingViewAccess) {
+      throw new Error("Wait until a view's access records are ready before adding a user.");
+    }
+    if (this.availableAccessUsers.length === 0) throw new Error("There are no available users to add.");
+    this.hasNewUserRow = true;
+    this.viewAccessSaveError = null;
+  }
+
+  selectAccessUser(userId: string): void {
+    if (!this.hasNewUserRow || this.isSavingViewAccess) throw new Error("Add a new user row before selecting a user.");
+    const user = this.availableAccessUsers.find((entry) => entry.id.toLowerCase() === userId.toLowerCase());
+    if (!user) throw new Error("This user is unavailable or is already in the access grid.");
+    this.newViewAccess.push({ id: user.id, name: user.name, principalType: "User", accessRightsMask: 1 });
+    this.hasNewUserRow = false;
+  }
+
+  cancelAddAccessUser(): void {
+    this.hasNewUserRow = false;
   }
 
   stageViewAccess(principal: ViewAccess, mask: number): void {
     if (this.isSavingViewAccess) throw new Error("Wait for access changes to finish saving.");
+    const newPrincipal = this.newViewAccess.find((entry) => entry.id === principal.id && entry.principalType === principal.principalType);
+    if (newPrincipal) {
+      if (!isEditableAccessMask(mask)) throw new Error("This access mask contains unsupported rights and cannot be edited.");
+      if (mask === 0) {
+        this.newViewAccess = this.newViewAccess.filter((entry) => entry !== newPrincipal);
+      } else {
+        this.newViewAccess = this.newViewAccess.map((entry) =>
+          entry === newPrincipal ? { ...entry, accessRightsMask: mask } : entry);
+      }
+      this.viewAccessSaveError = null;
+      return;
+    }
     const original = this.viewAccess.find((entry) => entry.id === principal.id && entry.principalType === principal.principalType);
     if (!this.selectedView || !original) throw new Error("Select a current view access record before editing.");
     if (!isEditableAccessMask(original.accessRightsMask) || !isEditableAccessMask(mask)) {
@@ -172,19 +237,36 @@ export class ViewModel {
     if (mask === original.accessRightsMask) this.pendingAccess.delete(key);
     else this.pendingAccess.set(key, mask);
     this.viewAccessSaveError = null;
-    this.viewAccessSaveMessage = null;
+  }
+
+  removeViewAccess(principal: ViewAccess): void {
+    if (this.isSavingViewAccess) throw new Error("Wait for access changes to finish saving.");
+    if (!this.selectedView || principal.principalType !== "User") {
+      throw new Error("Select a user in the current view before removing access.");
+    }
+    const added = this.newViewAccess.find((entry) => entry.id === principal.id);
+    if (added) {
+      this.stageViewAccess(added, 0);
+      return;
+    }
+    const original = this.viewAccess.find((entry) => entry.id === principal.id && entry.principalType === "User");
+    if (!original) throw new Error("This user is no longer in the current access grid.");
+    this.pendingAccess.set(`User:${original.id}`, 0);
+    this.viewAccessSaveError = null;
   }
 
   discardAccessChanges(): void {
     if (this.isSavingViewAccess) throw new Error("Wait for access changes to finish saving.");
     this.pendingAccess.clear();
+    this.newViewAccess = [];
+    this.hasNewUserRow = false;
     this.viewAccessSaveError = null;
-    this.viewAccessSaveMessage = null;
   }
 
-  async saveViewAccess(service: ViewDataService): Promise<void> {
-    if (this.isSavingViewAccess) return;
-    if (!this.selectedView || !this.hasAccessChanges) return;
+  async saveViewAccess(service: ViewDataService): Promise<boolean> {
+    if (this.isSavingViewAccess) return false;
+    if (!this.selectedView || !this.hasAccessChanges) return false;
+    if (this.hasNewUserRow) throw new Error("Choose a user for the new row or cancel it before saving.");
     const viewId = this.selectedView.id;
     const request = this.viewAccessRequest;
     const changes = this.viewAccess
@@ -192,20 +274,28 @@ export class ViewModel {
       .map((principal) => ({
         principal,
         mask: this.pendingAccess.get(`${principal.principalType}:${principal.id}`) ?? principal.accessRightsMask,
-      }));
+        isNew: false,
+      })).concat(this.newViewAccess.map((principal) => ({
+        principal, mask: principal.accessRightsMask, isNew: true,
+      })));
     this.isSavingViewAccess = true;
     this.viewAccessSaveError = null;
-    this.viewAccessSaveMessage = null;
     let savingName = "";
     let writesComplete = false;
     try {
-      for (const { principal, mask } of changes) {
+      for (const { principal, mask, isNew } of changes) {
         savingName = principal.name;
-        await service.updateViewAccess(viewId, principal, mask);
+        if (isNew) await service.grantViewAccess(viewId, principal, mask);
+        else await service.updateViewAccess(viewId, principal, mask);
         if (request !== this.viewAccessRequest) {
           throw new Error("The view or connection changed. Remaining access changes were not submitted.");
         }
         runInAction(() => {
+          if (isNew) {
+            this.newViewAccess = this.newViewAccess.filter((entry) => entry.id !== principal.id);
+            this.viewAccess = [...this.viewAccess, { ...principal, accessRightsMask: mask }];
+            return;
+          }
           this.pendingAccess.delete(`${principal.principalType}:${principal.id}`);
           this.viewAccess = this.viewAccess.flatMap((entry) =>
             entry.id === principal.id && entry.principalType === principal.principalType
@@ -215,11 +305,11 @@ export class ViewModel {
       }
       writesComplete = true;
       const access = await service.getViewAccess(viewId);
-      if (request !== this.viewAccessRequest) return;
+      if (request !== this.viewAccessRequest) return false;
       runInAction(() => {
         this.viewAccess = access;
-        this.viewAccessSaveMessage = "Access changes saved.";
       });
+      return true;
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       const message = writesComplete
@@ -303,8 +393,9 @@ export class ViewModel {
 
   clearSelectedView(): void {
     this.pendingAccess.clear();
+    this.newViewAccess = [];
+    this.hasNewUserRow = false;
     this.viewAccessSaveError = null;
-    this.viewAccessSaveMessage = null;
     this.viewAccessRequest++;
     this.selectedView = null;
     this.viewAccess = [];

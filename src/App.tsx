@@ -140,9 +140,19 @@ function App() {
     });
   }, []);
 
+  const notifySuccess = useCallback((message: string) => {
+    void window.toolboxAPI.utils.showNotification({
+      title: "ViewStudio",
+      body: message,
+      type: "success",
+    }).catch((error: unknown) => {
+      addLog(`Unable to show success notification: ${error instanceof Error ? error.message : String(error)}`, "error");
+    });
+  }, [addLog]);
+
   return (
-    <FluentProvider theme={theme === "dark" ? webDarkTheme : webLightTheme} className={styles.root}>
-      <ViewStudio connection={connection} dvSvc={dvSvc} vm={vm} onLog={addLog} notifyError={notifyError} />
+    <FluentProvider theme={theme === "dark" ? webDarkTheme : webLightTheme} className={styles.root} applyStylesToPortals={false}>
+      <ViewStudio connection={connection} dvSvc={dvSvc} vm={vm} onLog={addLog} notifyError={notifyError} notifySuccess={notifySuccess} />
     </FluentProvider>
   );
 }

@@ -40,10 +40,36 @@ teams returned for that view, together with readable access rights such as
 - A warning appears when the query reaches its limit of **51 sharing records**;
   more records may exist.
 
+## Add a user
+
+1. Select a personal view and click **Add user** in the access-panel header.
+2. A new row is added at the bottom of the grid and a user picker opens.
+3. Type to search, then select a user. Users already listed in the grid,
+   including pending additions, are excluded.
+4. The new user starts with **Read** access. Click their Access rights value to
+   amend it if needed.
+5. Use **Save access changes** to apply the new share.
+
+**Cancel** removes an unfilled new row. **Discard access changes** removes
+pending additions along with other unsaved edits. Clearing all rights for a
+newly added, unsaved user removes that pending addition without changing
+Dataverse. Adding teams is not currently supported by this picker.
+
+## Remove a user's access
+
+Click the **Delete** icon in a user's Actions column to mark their share for
+removal. The row disappears immediately; click **Save access changes** to apply
+the removal in Dataverse. Use **Discard access changes** to restore the row.
+
+Delete revokes the entire direct share, including permissions hidden from the
+editor. Access through ownership, security roles or teams may still apply.
+Deleting a newly added, unsaved user only removes the pending addition.
+
 ## Change access rights
 
 1. Click a user's or team's **Access rights** value.
-2. In the editor, open the multi-select list and select or clear permissions.
+2. In the editor's compact list box, select or clear permissions. All five
+   choices are shown without opening a dropdown.
 3. Select **Done** to return to the access panel. This does **not** save yet.
 4. Repeat for other users or teams if needed.
 5. Click the **Save access changes** icon in the access-panel header to save all
@@ -61,7 +87,8 @@ those permissions are preserved.
 Clearing the picker does not remove hidden permissions. Users may also still
 have access through ownership, roles or other teams.
 
-The panel reloads after saving and displays a confirmation. Unsupported
+The unsaved-changes prompt appears below the access grid. After saving, the
+panel reloads and ToolBox displays a success notification. Unsupported
 permissions appear as **Unknown rights** and cannot be edited in this tool.
 
 ### If saving fails

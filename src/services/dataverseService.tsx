@@ -165,10 +165,25 @@ export class dvService implements ViewDataService {
 
   async updateViewAccess(viewId: string, principal: ViewAccess, mask: number): Promise<void> {
     const operationName = mask === 0 ? "RevokeAccess" : "ModifyAccess";
+    await this.writeViewAccess(viewId, principal, mask, operationName);
+  }
+
+  async grantViewAccess(viewId: string, principal: ViewAccess, mask: number): Promise<void> {
+    await this.writeViewAccess(viewId, principal, mask, "GrantAccess");
+  }
+
+  private async writeViewAccess(
+    viewId: string,
+    principal: ViewAccess,
+    mask: number,
+    operationName: "GrantAccess" | "ModifyAccess" | "RevokeAccess",
+  ): Promise<void> {
+    console.log(`Writing view access: ${operationName} (view: ${viewId}, ${principal.principalType}: ${principal.id})`);
     await this.callDataverse(`${operationName} (view: ${viewId}, ${principal.principalType}: ${principal.id})`, async () => {
       const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!guid.test(viewId) || !guid.test(principal.id)) throw new Error("The view or principal ID is invalid.");
       if (!isEditableAccessMask(mask)) throw new Error("The access rights mask is invalid or unsupported.");
+      if (operationName === "GrantAccess" && mask === 0) throw new Error("Select at least one permission for a new share.");
       if (principal.principalType !== "User" && principal.principalType !== "Team") {
         throw new Error("Only users and teams can have their view access amended.");
       }

@@ -24,7 +24,7 @@ const useStyles = makeStyles({
 });
 
 export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element => {
-  const { connection, dvSvc, vm, onLog, notifyError } = props;
+  const { connection, dvSvc, vm, onLog, notifyError, notifySuccess } = props;
   const styles = useStyles();
 
   const loadViews = useCallback(async () => {
@@ -80,16 +80,49 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
     }
   }, [vm, onLog, notifyError]);
 
+  const removeAccess = useCallback((principal: ViewAccess) => {
+    try {
+      vm.removeViewAccess(principal);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to remove user access.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [vm, onLog, notifyError]);
+
+  const addAccessUser = useCallback(() => {
+    try {
+      vm.beginAddAccessUser();
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to add a user.";
+      onLog(message, "error");
+      notifyError(message);
+      return false;
+    }
+  }, [vm, onLog, notifyError]);
+
+  const selectAccessUser = useCallback((userId: string) => {
+    try {
+      vm.selectAccessUser(userId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to select this user.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [vm, onLog, notifyError]);
+
   const saveAccess = useCallback(async () => {
     if (!dvSvc) return;
     try {
-      await vm.saveViewAccess(dvSvc);
+      const saved = await vm.saveViewAccess(dvSvc);
+      if (saved) notifySuccess("Access changes saved.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save view access.";
       onLog(message, "error");
       notifyError(message);
     }
-  }, [dvSvc, vm, onLog, notifyError]);
+  }, [dvSvc, vm, onLog, notifyError, notifySuccess]);
 
   return (
     <div className={styles.root}>
@@ -123,10 +156,15 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
             hasChanges={vm.hasAccessChanges}
             isSaving={vm.isSavingViewAccess}
             saveError={vm.viewAccessSaveError}
-            saveMessage={vm.viewAccessSaveMessage}
             onChange={changeAccess}
+            onRemove={removeAccess}
             onSave={saveAccess}
             onDiscard={() => vm.discardAccessChanges()}
+            availableUsers={vm.availableAccessUsers}
+            hasNewUserRow={vm.hasNewUserRow}
+            onAddUser={addAccessUser}
+            onSelectUser={selectAccessUser}
+            onCancelUser={() => vm.cancelAddAccessUser()}
           />
         </div>
       )}
