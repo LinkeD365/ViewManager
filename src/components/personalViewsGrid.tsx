@@ -13,17 +13,35 @@ const useStyles = makeStyles({
   },
 });
 
+const compareTextCaseInsensitive = (valueA: string | null | undefined, valueB: string | null | undefined): number =>
+  (valueA ?? "").localeCompare(valueB ?? "", undefined, { sensitivity: "base" });
+
 const columns: ColDef<PersonalView>[] = [
-  { field: "name", headerName: "View name", minWidth: 220, flex: 1, initialSort: "asc", initialSortIndex: 1 },
-  { field: "tableName", headerName: "Table", minWidth: 200, initialSort: "asc", initialSortIndex: 0 },
-  { field: "ownerName", headerName: "Owner", minWidth: 180 },
+  {
+    field: "name",
+    headerName: "View name",
+    minWidth: 220,
+    flex: 1,
+    initialSort: "asc",
+    initialSortIndex: 1,
+    comparator: compareTextCaseInsensitive,
+  },
+  {
+    field: "tableName",
+    headerName: "Table",
+    minWidth: 200,
+    initialSort: "asc",
+    initialSortIndex: 0,
+    comparator: compareTextCaseInsensitive,
+  },
+  { field: "ownerName", headerName: "Owner", minWidth: 180, comparator: compareTextCaseInsensitive },
   {
     field: "modifiedOn",
     headerName: "Modified",
     minWidth: 180,
     valueFormatter: ({ value }) => value ? new Date(value).toLocaleString() : "",
   },
-  { field: "description", headerName: "Description", minWidth: 220, flex: 1 },
+  { field: "description", headerName: "Description", minWidth: 220, flex: 1, comparator: compareTextCaseInsensitive },
 ];
 
 export const PersonalViewsGrid = ({ views, selectedViewIds, onSelectViews, selectionDisabled }: PersonalViewsGridProps): React.JSX.Element => {

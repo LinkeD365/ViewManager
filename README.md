@@ -51,11 +51,46 @@ No system-view query or grid is shown until a table is selected. Use the
 **Refresh system views** icon to reload the selected table's views, or retry
 loading tables if a metadata error is displayed.
 
-System views are read-only in this tool: ownership and sharing actions remain
-on the Personal views tab. Each tab keeps its own filters and results when you
-switch. Save or discard pending personal-view edits and close bulk-action forms
-before switching tabs. A connection change clears the system table selection.
-Results remain limited by the connected account's permissions.
+Each tab keeps its own filters and results when you switch. Save or discard
+pending personal-view edits and close bulk-action forms before switching tabs.
+A connection change clears the system table selection. Results remain limited
+by the connected account's permissions.
+
+## Copy system views to personal views
+
+1. On **System views**, select one or more views using the row checkboxes.
+2. Click **Copy selected system views to personal views** in the toolbar.
+3. Choose an active user as the new owner, then click **Copy views**. The
+   original system views are unchanged.
+
+Each personal copy keeps its system view's name, description, filters and layout.
+Copies are separate views, so later changes to either view do not affect the
+other. If a create request fails, **Retry remaining copies** uses the same copy
+IDs and owner, checking whether Dataverse already created each view before
+retrying. Closing the dialog does not undo views that Dataverse has already
+created; after a failed attempt, the matching personal-view listing is refreshed
+when it is visible.
+
+## Copy views across environments
+
+ViewStudio can connect to up to ten Dataverse environments. The primary
+environment is always the source; the additional configured connections are
+available as destinations. Select one or more destination environments in the
+cross-environment copy dialog.
+
+Use **Copy personal views to other environments** on the Personal views tab to
+copy selected personal views as personal views. Choose the new owner separately
+in each destination. Use **Copy system views to other environments** on the
+System views tab to copy selected system views as system views. Choose an
+unmanaged solution separately in each destination.
+
+Copies run sequentially and show progress for each view and destination. If a
+copy fails, retry the remaining work in the same dialog; completed copies are
+skipped and the selected destinations, owners/solutions and copy IDs stay
+locked. Closing the dialog or changing connections does not undo views already
+created. Cross-environment copying requires the connected account to have the
+appropriate read and create privileges in each environment, plus solution
+privileges when copying system views.
 
 ## Copy personal views to system views
 

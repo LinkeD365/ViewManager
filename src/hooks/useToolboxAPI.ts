@@ -7,14 +7,13 @@ export type LogEntry = {
 };
 
 export function useConnection() {
-  const [connection, setConnection] =
-    useState<ToolBoxAPI.DataverseConnection | null>(null);
+  const [connections, setConnections] =
+    useState<Array<ToolBoxAPI.DataverseConnection | null>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshConnection = useCallback(async () => {
     try {
-      const conn = await window.toolboxAPI.connections.getActiveConnection();
-      setConnection(conn);
+      setConnections(await window.toolboxAPI.connections.getConnections());
     } catch (error) {
       console.error("Error refreshing connection:", error);
     } finally {
@@ -26,7 +25,7 @@ export function useConnection() {
     refreshConnection();
   }, [refreshConnection]);
 
-  return { connection, isLoading, refreshConnection };
+  return { connections, isLoading, refreshConnection };
 }
 
 export function useToolboxEvents(onEvent: (event: string, data: any) => void) {

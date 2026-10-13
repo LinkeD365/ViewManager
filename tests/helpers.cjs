@@ -32,6 +32,14 @@ const anotherUser = { id: "dddddddd-dddd-dddd-dddd-dddddddddddd", name: "Another
 const view = { id: viewId, name: "Test view", entityName: "account", tableName: "Account (account)", ownerId: user.id, ownerName: user.name, modifiedOn: "", description: "" };
 const secondView = { ...view, id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", name: "Second view" };
 const thirdView = { ...view, id: "ffffffff-ffff-ffff-ffff-ffffffffffff", name: "Third view" };
+const systemView = {
+  id: "77777777-7777-7777-7777-777777777777",
+  name: "System view",
+  entityName: "account",
+  tableName: "Account (account)",
+  modifiedOn: "",
+  description: "Account system view",
+};
 
 function createService(execute = async () => ({})) {
   const logs = [];
@@ -93,6 +101,25 @@ function createCopyModel(views = [view, secondView]) {
   return vm;
 }
 
+function createPersonalCopyService(overrides = {}) {
+  return {
+    personalViewExists: async () => false,
+    getSystemViewDefinition: async () => ({ ...viewDefinition }),
+    createPersonalView: async () => {},
+    ...overrides,
+  };
+}
+
+function createPersonalCopyModel(sources = [systemView], owner = newUser) {
+  const vm = new ViewModel();
+  vm.activeTab = "system";
+  vm.systemViews = sources;
+  vm.selectedSystemViews = sources;
+  vm.beginCopySystemViewToPersonal();
+  vm.copySystemViewToPersonal.selectOwner(owner.id, [newUser, anotherUser]);
+  return vm;
+}
+
 module.exports = {
   ViewModel,
   accessRights,
@@ -108,6 +135,7 @@ module.exports = {
   view,
   secondView,
   thirdView,
+  systemView,
   createService,
   createModel,
   createBulkAccessModel,
@@ -116,4 +144,6 @@ module.exports = {
   viewDefinition,
   createCopyService,
   createCopyModel,
+  createPersonalCopyService,
+  createPersonalCopyModel,
 };

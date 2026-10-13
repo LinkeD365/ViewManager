@@ -25,6 +25,7 @@ export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.J
     ownerDisabled, refreshDisabled, onOwnerChange, onTableChange, onRefresh,
     changeOwnerDisabled, selectedViewCount, onChangeOwner,
     addUsersDisabled, onAddUsers, copyViewsDisabled, onCopyViews,
+    copyToEnvironmentDisabled, onCopyViewsToEnvironment,
   } = props;
   const styles = useStyles();
   const [ownerSearch, setOwnerSearch] = useState("");
@@ -95,6 +96,14 @@ export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.J
         )}
       </Combobox>
       <Toolbar className={styles.actions} aria-label="Personal views actions">
+        <Tooltip content={`Copy selected views to another environment (${selectedViewCount})`} relationship="label">
+          <ToolbarButton
+            aria-label={`Copy selected views to another environment (${selectedViewCount})`}
+            icon={<Copy24Regular />}
+            disabled={copyToEnvironmentDisabled}
+            onClick={onCopyViewsToEnvironment}
+          />
+        </Tooltip>
         <Tooltip content={`Copy to system views (${selectedViewCount})`} relationship="label">
           <ToolbarButton
             aria-label={`Copy to system views (${selectedViewCount})`}
