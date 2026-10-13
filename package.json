@@ -39,7 +39,7 @@
     "ag-grid-community": "^36.2.0",
     "ag-grid-react": "^36.2.0",
     "mobx": "^6.15.0",
-    "mobx-react": "^9.2.1",
+    "mobx-react": "^10.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
