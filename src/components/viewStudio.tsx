@@ -41,7 +41,7 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
   const { connections, connectionServices, vm, onLog, notifyError, notifySuccess } = props;
   const connection = connections[0] ?? null;
   const dvSvc = connectionServices[0] ?? null;
-  const destinationTargets = connections.flatMap((target, slot) => target && slot > 0
+  const destinationTargets = connections.flatMap((target, slot) => target && slot > 0 && slot < 7
     ? [{ slot, name: target.name, environment: target.environment }]
     : []);
   const targetServices = new Map<number, NonNullable<(typeof connectionServices)[number]>>();
@@ -582,6 +582,9 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
           sourceCount={crossEnvironmentCopyKind === "personal"
             ? vm.crossEnvironmentCopy.personalSources.length
             : vm.crossEnvironmentCopy.systemSources.length}
+          sourceViews={crossEnvironmentCopyKind === "personal"
+            ? vm.crossEnvironmentCopy.personalSources
+            : vm.crossEnvironmentCopy.systemSources}
           targets={vm.crossEnvironmentCopy.targets}
           selectedTargetSlots={vm.crossEnvironmentCopy.selectedTargetSlots}
           isTargetsLocked={vm.crossEnvironmentCopy.destinations.some((destination) =>

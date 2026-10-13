@@ -1,12 +1,13 @@
 {
-  "name": "pptb-viewstudio",
+  "name": "@linked365/pptb-viewstudio",
   "version": "0.1.0",
   "displayName": "View Studio",
-  "description": "A Power Platform ToolBox tool that allows users to manage and view personal views in Dataverse.",
+  "description": "A Power Platform ToolBox tool that allows users to manage and copy personal and system views in Dataverse.",
+    "icon": "Linked365Logo.svg",
   "features": {
     "connections": {
       "min": 1,
-      "max": 10
+      "max": 7
     }
   },
   "main": "dist/index.html",
@@ -16,9 +17,17 @@
       "name": "LinkeD365"
     }
   ],
+    "repository": {
+    "type": "git",
+    "url": "https://github.com/LinkeD365/ViewStudio"
+  },
   "configurations": {
     "repository": "https://github.com/LinkeD365/ViewStudio",
+     "website": "https://linked365.blog",
     "readmeUrl": "https://raw.githubusercontent.com/LinkeD365/ViewStudio/main/README.md"
+  },
+    "bugs": {
+    "url": "https://github.com/LinkeD365/ViewStudio/issues"
   },
   "license": "MIT",
   "engines": {

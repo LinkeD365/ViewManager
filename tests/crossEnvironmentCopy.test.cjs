@@ -10,6 +10,25 @@ const targets = [1, 3].map((slot) => ({
   environment: `org${slot + 1}.crm.dynamics.com`,
 }));
 
+test("cross-environment copy supports no more than six destinations plus the primary", () => {
+  const operation = new ViewModel().crossEnvironmentCopy;
+  const sixDestinations = Array.from({ length: 6 }, (_, index) => ({
+    slot: index + 1,
+    name: `Environment ${index + 2}`,
+    environment: `org${index + 2}.crm.dynamics.com`,
+  }));
+  operation.beginPersonal([view], sixDestinations);
+  operation.cancel();
+  assert.throws(
+    () => operation.beginPersonal([view], [...sixDestinations, {
+      slot: 7,
+      name: "Environment 8",
+      environment: "org8.crm.dynamics.com",
+    }]),
+    /up to seven environments/,
+  );
+});
+
 test("personal views copy to selected destinations with destination-specific owners", async () => {
   const operation = new ViewModel().crossEnvironmentCopy;
   const source = { ...view, id: "source-view" };
@@ -95,7 +114,30 @@ test("system copies retain IDs and destination settings when retrying a partial 
   assert.deepEqual(calls.slice(-1), [["add", 3, ids[1], "Solution3"]]);
 });
 
-test("Dataverse services preserve numeric destination slots through slot 9", async () => {
+test("missing destination table error explains how to resolve the failed copy", async () => {
+  const operation = new ViewModel().crossEnvironmentCopy;
+  const missingTableError = "Error invoking remote method 'dataverse.create': Error: Dataverse create failed: "
+    + "0x80041102: The entity with a name = 'contoso_listing' with namemapping = 'Logical' was not found "
+    + "in the MetadataCache.LazyDynamicMetadataCache with version 6941766 and timestamp 6941766";
+  const sourceService = { getPersonalViewDefinition: async () => ({ ...viewDefinition }) };
+  const destinationService = {
+    getActiveUsers: async () => [newUser],
+    personalViewExists: async () => false,
+    createPersonalView: async () => { throw new Error(missingTableError); },
+  };
+  const services = new Map([[1, destinationService]]);
+
+  operation.beginPersonal([view], targets.slice(0, 1));
+  await operation.selectTargets([1], services);
+  operation.selectOwner(1, newUser.id);
+  await assert.rejects(operation.copy(sourceService, services), /table required by this view/);
+  assert.match(operation.error, /0 of 1 view copy completed/);
+  assert.match(operation.error, /contoso_listing/);
+  assert.match(operation.error, /installed and published in the destination environment/);
+  assert.doesNotMatch(operation.error, /80041102|MetadataCache|6941766|remote method/);
+});
+
+test("Dataverse services preserve numeric destination slots through slot 6", async () => {
   const targetsSeen = [];
   const dvApi = {
     fetchXmlQuery: async (_fetchXml, target) => {
@@ -107,7 +149,7 @@ test("Dataverse services preserve numeric destination slots through slot 9", asy
       return { UserId: newUser.id };
     },
   };
-  for (let slot = 1; slot < 10; slot++) {
+  for (let slot = 1; slot < 7; slot++) {
     const service = new dvService({
       connection: null,
       dvApi,
@@ -116,5 +158,5 @@ test("Dataverse services preserve numeric destination slots through slot 9", asy
     });
     assert.deepEqual(await service.getActiveUsers(), [{ ...newUser, isCurrentUser: true }]);
   }
-  assert.deepEqual(targetsSeen, Array.from({ length: 9 }, (_, index) => index + 1).flatMap((slot) => [slot, slot]));
+  assert.deepEqual(targetsSeen, Array.from({ length: 6 }, (_, index) => index + 1).flatMap((slot) => [slot, slot]));
 });

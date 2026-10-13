@@ -101,6 +101,7 @@ export interface CrossEnvironmentDestination extends EnvironmentTargetOption {
 export interface CrossEnvironmentCopyDialogProps {
   kind: CrossEnvironmentCopyKind;
   sourceCount: number;
+  sourceViews: Array<Pick<PersonalView, "id" | "name" | "tableName">>;
   targets: EnvironmentTargetOption[];
   selectedTargetSlots: number[];
   isTargetsLocked: boolean;

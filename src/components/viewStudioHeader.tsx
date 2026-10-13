@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { observer } from "mobx-react";
 import { Combobox, makeStyles, Option, tokens, Toolbar, ToolbarButton, Tooltip } from "@fluentui/react-components";
-import { ArrowClockwise24Regular, Copy24Regular, PersonAdd24Regular, PersonSwap24Regular } from "@fluentui/react-icons";
+import {
+  ArrowClockwise24Regular, Copy24Regular, CopyArrowRight24Regular, PersonAdd24Regular, PersonSwap24Regular,
+} from "@fluentui/react-icons";
 import type { ViewStudioHeaderProps } from "../model/viewModel";
 
 const useStyles = makeStyles({
@@ -99,7 +101,7 @@ export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.J
         <Tooltip content={`Copy selected views to another environment (${selectedViewCount})`} relationship="label">
           <ToolbarButton
             aria-label={`Copy selected views to another environment (${selectedViewCount})`}
-            icon={<Copy24Regular />}
+            icon={<CopyArrowRight24Regular />}
             disabled={copyToEnvironmentDisabled}
             onClick={onCopyViewsToEnvironment}
           />

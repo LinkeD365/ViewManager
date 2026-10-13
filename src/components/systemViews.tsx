@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Combobox, makeStyles, MessageBar, Option, Spinner, tokens, Toolbar, ToolbarButton, Tooltip } from "@fluentui/react-components";
-import { ArrowClockwise24Regular, Copy24Regular, CopyArrowRight24Regular } from "@fluentui/react-icons";
+import {
+  ArrowClockwise24Regular, CopyArrowRight24Regular, DocumentPerson20Regular,
+} from "@fluentui/react-icons";
 import { AllCommunityModule, themeQuartz } from "ag-grid-community";
 import type { ColDef } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
@@ -92,7 +94,7 @@ export const SystemViews = ({
           <Tooltip content="Copy selected system views to personal views" relationship="label">
             <ToolbarButton
               aria-label="Copy selected system views to personal views"
-              icon={<Copy24Regular />}
+              icon={<DocumentPerson20Regular />}
               disabled={copyDisabled}
               onClick={onCopyToPersonal}
             />

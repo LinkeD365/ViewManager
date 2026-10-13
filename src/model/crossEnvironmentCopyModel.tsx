@@ -42,6 +42,7 @@ export class CrossEnvironmentCopyModel {
   private begin(kind: CrossEnvironmentCopyKind, targets: EnvironmentTargetOption[]): void {
     if (this.isOpen || this.isCopying) throw new Error("Finish the current cross-environment copy first.");
     if (targets.length === 0) throw new Error("Configure at least one destination environment.");
+    if (targets.length > 6) throw new Error("Copying supports up to seven environments, including the primary source.");
     this.reset();
     this.kind = kind;
     this.targets = targets.map((target) => ({ ...target }));
@@ -281,7 +282,17 @@ export class CrossEnvironmentCopyModel {
         ? "completed" in copy && copy.completed
         : "added" in copy && copy.added).length;
       const detail = error instanceof Error ? error.message : "Dataverse could not complete the copy.";
-      const message = `${completed} of ${copies.length} view copies completed. Could not copy "${currentName}" to ${currentDestination}. ${detail}`;
+      const progress = `${completed} of ${copies.length} view ${copies.length === 1 ? "copy" : "copies"} completed.`;
+      const context = currentDestination
+        ? `Could not copy "${currentName}" to ${currentDestination}.`
+        : "Could not complete the copy.";
+      const missingTable = detail.match(
+        /0x80041102[\s\S]*?entity\s+with\s+a\s+name\s*=\s*['"]([^'"]+)['"][\s\S]*?was not found in the MetadataCache/i,
+      );
+      const friendlyDetail = missingTable
+        ? `The destination environment could not find the "${missingTable[1]}" table required by this view. Make sure the table is installed and published in the destination environment, then retry.`
+        : detail;
+      const message = `${progress} ${context} ${friendlyDetail}`;
       runInAction(() => { this.error = message; });
       throw new Error(message);
     } finally {
