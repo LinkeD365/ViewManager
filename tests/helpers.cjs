@@ -22,8 +22,8 @@ function loadSource(filename) {
   return module.exports;
 }
 
-const { ViewModel, accessRights, formatAccessRights, selectableAccessRights, getAccessMaskFromSelection } = loadSource("src\\model\\viewModel.tsx");
-const { dvService } = loadSource("src\\services\\dataverseService.tsx");
+const { ViewModel, accessRights, formatAccessRights, selectableAccessRights, getAccessMaskFromSelection } = loadSource(path.join("src", "model", "viewModel.tsx"));
+const { dvService } = loadSource(path.join("src", "services", "dataverseService.tsx"));
 const viewId = "33bc5942-dbee-ef11-be20-6045bded7daf";
 const user = { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", name: "Example user", principalType: "User", accessRightsMask: 1 };
 const team = { id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", name: "Example team", principalType: "Team", accessRightsMask: 1 };
