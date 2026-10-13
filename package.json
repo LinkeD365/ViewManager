@@ -19,7 +19,8 @@
     "dev": "vite",
     "watch": "vite build --watch",
     "preview": "vite preview",
-    "finalize-package": "npm shrinkwrap"
+    "finalize-package": "npm shrinkwrap",
+    "validate": "pptb-validate"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.72.7",

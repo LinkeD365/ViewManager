@@ -1,23 +1,38 @@
 import React, { useState } from "react";
 import { observer } from "mobx-react";
-import { Combobox, makeStyles, Option, Text, Toolbar, ToolbarButton } from "@fluentui/react-components";
-import { ArrowClockwise24Regular } from "@fluentui/react-icons";
+import { Combobox, makeStyles, Option, tokens, Toolbar, ToolbarButton, Tooltip } from "@fluentui/react-components";
+import { ArrowClockwise24Regular, Copy24Regular, PersonAdd24Regular, PersonSwap24Regular } from "@fluentui/react-icons";
 import type { ViewStudioHeaderProps } from "../model/viewModel";
 
 const useStyles = makeStyles({
   header: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
+    flexWrap: "wrap",
+    gap: tokens.spacingHorizontalM,
     position: "relative",
     zIndex: 10,
+  },
+  actions: {
+    marginLeft: "auto",
   },
 });
 
 export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.JSX.Element => {
-  const { activeUsers, selectedOwnerId, ownerDisabled, refreshDisabled, onOwnerChange, onRefresh } = props;
+  const {
+    activeUsers, selectedOwnerId, tables, selectedTableLogicalName, tableDisabled,
+    ownerDisabled, refreshDisabled, onOwnerChange, onTableChange, onRefresh,
+    changeOwnerDisabled, selectedViewCount, onChangeOwner,
+    addUsersDisabled, onAddUsers, copyViewsDisabled, onCopyViews,
+  } = props;
   const styles = useStyles();
   const [ownerSearch, setOwnerSearch] = useState("");
+  const [tableSearch, setTableSearch] = useState("");
+  const visibleTables = tables.filter((table) =>
+    table.name.toLocaleLowerCase().includes(tableSearch.toLocaleLowerCase()),
+  );
+  const selectedTableName = tables.find((table) => table.logicalName === selectedTableLogicalName)?.name ?? "";
   const visibleUsers = activeUsers.filter((user) =>
     user.name.toLocaleLowerCase().includes(ownerSearch.toLocaleLowerCase()),
   );
@@ -27,7 +42,6 @@ export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.J
 
   return (
     <div className={styles.header}>
-      <Text as="h1" size={500} weight="semibold">Personal views</Text>
       <Combobox
         aria-label="Filter views by owner"
         placeholder="Select an owner"
@@ -39,6 +53,7 @@ export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.J
           const ownerId = data.optionValue === "all" ? null : data.optionValue ?? null;
           onOwnerChange(ownerId);
           setOwnerSearch("");
+          setTableSearch("");
         }}
         disabled={ownerDisabled}
       >
@@ -54,13 +69,64 @@ export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.J
           </Option>
         )}
       </Combobox>
-      <Toolbar aria-label="Personal views actions">
-        <ToolbarButton
-          aria-label="Refresh personal views"
-          icon={<ArrowClockwise24Regular />}
-          disabled={refreshDisabled}
-          onClick={() => void onRefresh()}
-        />
+      <Combobox
+        aria-label="Filter views by table"
+        placeholder="Select a table"
+        inlinePopup
+        value={tableSearch || selectedTableName}
+        selectedOptions={selectedTableLogicalName ? [selectedTableLogicalName] : []}
+        onChange={(event) => setTableSearch(event.target.value)}
+        onOptionSelect={(_event, data) => {
+          if (!data.optionValue) return;
+          onTableChange(data.optionValue);
+          setTableSearch("");
+        }}
+        disabled={selectedOwnerId !== null || tableDisabled}
+      >
+        {visibleTables.map((table) => (
+          <Option key={table.logicalName} value={table.logicalName} text={table.name}>
+            {table.name}
+          </Option>
+        ))}
+        {visibleTables.length === 0 && (
+          <Option value="no-matches" text="No matching tables" disabled>
+            No matching tables
+          </Option>
+        )}
+      </Combobox>
+      <Toolbar className={styles.actions} aria-label="Personal views actions">
+        <Tooltip content={`Copy to system views (${selectedViewCount})`} relationship="label">
+          <ToolbarButton
+            aria-label={`Copy to system views (${selectedViewCount})`}
+            icon={<Copy24Regular />}
+            disabled={copyViewsDisabled}
+            onClick={onCopyViews}
+          />
+        </Tooltip>
+        <Tooltip content={`Add users (${selectedViewCount})`} relationship="label">
+          <ToolbarButton
+            aria-label={`Add users (${selectedViewCount})`}
+            icon={<PersonAdd24Regular />}
+            disabled={addUsersDisabled}
+            onClick={onAddUsers}
+          />
+        </Tooltip>
+        <Tooltip content={`Change owner (${selectedViewCount})`} relationship="label">
+          <ToolbarButton
+            aria-label={`Change owner (${selectedViewCount})`}
+            icon={<PersonSwap24Regular />}
+            disabled={changeOwnerDisabled}
+            onClick={onChangeOwner}
+          />
+        </Tooltip>
+        <Tooltip content="Refresh personal views" relationship="label">
+          <ToolbarButton
+            aria-label="Refresh personal views"
+            icon={<ArrowClockwise24Regular />}
+            disabled={refreshDisabled}
+            onClick={() => void onRefresh()}
+          />
+        </Tooltip>
       </Toolbar>
     </div>
   );

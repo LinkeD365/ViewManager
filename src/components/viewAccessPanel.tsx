@@ -32,6 +32,15 @@ const useStyles = makeStyles({
     textAlign: "left",
     justifyContent: "flex-start",
   },
+  deleteCell: {
+    "&.ag-cell": {
+      paddingLeft: 0,
+      paddingRight: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  },
 });
 
 export const ViewAccessPanel = observer((props: ViewAccessPanelProps): React.JSX.Element => {
@@ -74,7 +83,10 @@ export const ViewAccessPanel = observer((props: ViewAccessPanelProps): React.JSX
     {
       colId: "actions",
       headerName: "",
-      width: 90,
+      width: 36,
+      minWidth: 36,
+      maxWidth: 36,
+      cellClass: styles.deleteCell,
       pinned: "right",
       sortable: false,
       filter: false,
@@ -92,7 +104,7 @@ export const ViewAccessPanel = observer((props: ViewAccessPanelProps): React.JSX
           </Tooltip>
         ) : null,
     },
-  ], [isSaving, onRemove, styles.rightsButton]);
+  ], [isSaving, onRemove, styles.rightsButton, styles.deleteCell]);
   return (
     <section className={styles.panel} aria-label="Selected view access">
       <div className={styles.header}>
@@ -129,7 +141,7 @@ export const ViewAccessPanel = observer((props: ViewAccessPanelProps): React.JSX
       </div>
       {saveError && <MessageBar intent="error">{saveError}</MessageBar>}
       {!selectedView ? (
-        <MessageBar>Select a view on the left to see its access records.</MessageBar>
+        <MessageBar>Select exactly one view on the left to see its access records.</MessageBar>
       ) : isLoading ? (
         <Spinner label="Loading view access..." />
       ) : error ? (

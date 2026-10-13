@@ -14,3 +14,7 @@ body {
 #root {
   height: 100vh;
 }
+
+#root .ag-sort-order {
+  display: none;
+}

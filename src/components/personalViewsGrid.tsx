@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { makeStyles } from "@fluentui/react-components";
 import { AllCommunityModule, themeQuartz } from "ag-grid-community";
 import type { ColDef } from "ag-grid-community";
@@ -26,11 +26,26 @@ const columns: ColDef<PersonalView>[] = [
   { field: "description", headerName: "Description", minWidth: 220, flex: 1 },
 ];
 
-export const PersonalViewsGrid = ({ views, onSelectView, selectionDisabled }: PersonalViewsGridProps): React.JSX.Element => {
+export const PersonalViewsGrid = ({ views, selectedViewIds, onSelectViews, selectionDisabled }: PersonalViewsGridProps): React.JSX.Element => {
   const styles = useStyles();
+  const grid = useRef<AgGridReact<PersonalView>>(null);
+  const syncingSelection = useRef(false);
+  useEffect(() => {
+    const selected = new Set(selectedViewIds);
+    syncingSelection.current = true;
+    try {
+      grid.current?.api?.forEachNode((node) => {
+        const shouldSelect = !!node.id && selected.has(node.id);
+        if (node.isSelected() !== shouldSelect) node.setSelected(shouldSelect);
+      });
+    } finally {
+      syncingSelection.current = false;
+    }
+  }, [selectedViewIds, views]);
   return (
     <div className={styles.grid}>
       <AgGridReact<PersonalView>
+        ref={grid}
         modules={[AllCommunityModule]}
         onGridReady={({ api }) => api.setGridAriaProperty("label", "Personal views")}
         theme={themeQuartz}
@@ -38,10 +53,16 @@ export const PersonalViewsGrid = ({ views, onSelectView, selectionDisabled }: Pe
         columnDefs={columns}
         getRowId={({ data }) => data.id}
         defaultColDef={{ sortable: true, filter: true, resizable: true, suppressKeyboardEvent: () => selectionDisabled }}
-        rowSelection={{ mode: "singleRow", checkboxes: false, enableClickSelection: !selectionDisabled }}
+        rowSelection={{
+          mode: "multiRow",
+          checkboxes: () => !selectionDisabled,
+          headerCheckbox: !selectionDisabled,
+          selectAll: "filtered",
+          enableClickSelection: !selectionDisabled,
+        }}
         onSelectionChanged={(event) => {
-          if (selectionDisabled) return;
-          void onSelectView(event.api.getSelectedRows()[0] ?? null);
+          if (selectionDisabled || syncingSelection.current) return;
+          void onSelectViews(event.api.getSelectedRows());
         }}
         pagination
         paginationPageSize={25}
