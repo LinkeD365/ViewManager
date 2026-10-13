@@ -11,14 +11,21 @@ tokens.
 
 ## Architecture
 
-- [App.tsx](src/App.tsx) obtains the connection and theme, constructs the service
-  and view model, and supplies logging and notification callbacks.
+- [App.tsx](src/App.tsx) obtains all configured connection slots and the theme,
+  constructs one targeted service per assigned slot, and supplies logging and
+  notification callbacks.
 - [viewModel.tsx](src/model/viewModel.tsx) owns application state, all application
   interfaces, the `ViewDataService` contract and access-rights definitions.
   It does not depend on the concrete Dataverse service.
 - [copySystemViewsModel.tsx](src/model/copySystemViewsModel.tsx) is the focused
   observable copy-workflow collaborator owned by `ViewModel`. It tracks solution
   loading, stable copy IDs, progress, retries and request invalidation.
+- [copySystemViewsToPersonalModel.tsx](src/model/copySystemViewsToPersonalModel.tsx)
+  handles system-to-personal batch copies, including owner locking, stable-ID
+  recovery and invalidating pending operations when the connection changes.
+- [crossEnvironmentCopyModel.tsx](src/model/crossEnvironmentCopyModel.tsx)
+  handles same-type personal/system copies from primary to selected connection
+  slots, with per-destination owners/solutions, stable IDs and partial retries.
 - [dataverseService.tsx](src/services/dataverseService.tsx) implements that
   contract, constructs requests, maps responses and logs API failures.
 - [viewStudio.tsx](src/components/viewStudio.tsx) coordinates loading, user
@@ -31,10 +38,12 @@ props:
 | --- | --- |
 | [ViewStudioHeader](src/components/viewStudioHeader.tsx) | Searchable owner/table filters and refresh action |
 | [PersonalViewsGrid](src/components/personalViewsGrid.tsx) | View columns, sorting, pagination and selection |
-| [SystemViews](src/components/systemViews.tsx) | Table-first system-view selection, refresh and read-only grid |
+| [SystemViews](src/components/systemViews.tsx) | Table-first system-view selection, refresh and copy action |
 | [ViewOwnerDialog](src/components/viewOwnerDialog.tsx) | Searchable new-owner selection and assignment confirmation |
 | [AddViewUsersDialog](src/components/addViewUsersDialog.tsx) | Multi-user selection, shared permission selection and replacement warning |
 | [CopySystemViewsDialog](src/components/copySystemViewsDialog.tsx) | Searchable unmanaged-solution selection, public-view warning, copy progress and retry |
+| [CopySystemViewToPersonalDialog](src/components/copySystemViewToPersonalDialog.tsx) | Private-copy confirmation, create progress and retry |
+| [CrossEnvironmentCopyDialog](src/components/crossEnvironmentCopyDialog.tsx) | Multi-destination selection, per-environment owner/solution selection and copy progress |
 | [ViewAccessPanel](src/components/viewAccessPanel.tsx) | Sharing records, save/discard actions and status |
 | [ViewAccessEditor](src/components/viewAccessEditor.tsx) | Compact permission multi-select list box in a dialog |
 | [ViewAccessUserPicker](src/components/viewAccessUserPicker.tsx) | Searchable user selection for a new access row |
@@ -46,6 +55,7 @@ The owner and table filters are left-aligned, with refresh aligned to the right.
 The table combobox stays visible but is disabled when a specific owner is selected.
 Grid sort-priority numbers are hidden via the scoped `.ag-sort-order` rule in
 `src/index.css`; sort arrows and multi-column sorting remain unchanged.
+Text columns in both view grids use case-insensitive sorting.
 
 The root `FluentProvider` sets `applyStylesToPortals={false}` so its full-screen
 layout classes are not copied to tooltip/dialog portal containers. Theme tokens
@@ -59,9 +69,10 @@ per-control `document.body` overrides.
 | Available owners | FetchXML on `systemuser`, ordered by full name |
 | Current user | `execute` with the `WhoAmI` function |
 | Personal views | FetchXML on `userquery`, filtered by owner or by `returnedtypecode` for All owners |
-| System views | FetchXML on `savedquery`, filtered by the selected table's numeric `returnedtypecode` |
+| System views | FetchXML on `savedquery`, filtered by the selected table's numeric `returnedtypecode` and excluding `querytype = 8192` |
 | Copy destination solutions | FetchXML on visible unmanaged `solution` records, excluding internal Active/Default solutions |
 | Copy source definition | `retrieve("userquery", id, columns)` for name, table, FetchXML and layout fields |
+| Personal-copy source definition | `retrieve("savedquery", id, columns)` for name, table, FetchXML and layout fields |
 | Table picker, display names and type codes | `getAllEntitiesMetadata(["LogicalName", "DisplayName", "ObjectTypeCode"])` |
 | View sharing | FetchXML on `principalobjectaccess`, filtered by selected view ID |
 
@@ -95,7 +106,10 @@ numeric object-type-code validation used by personal views. System queries read
 view IDs, names, modified dates and descriptions, without ownership or sharing
 operations. Table changes invalidate stale responses; connection changes and
 unmount clear the system selection and invalidate pending reads. System-table
-metadata errors support retry via the system Refresh action.
+metadata errors support retry via the system Refresh action. The system grid
+allows multiple selected rows; selection is cleared on table changes and
+refreshes. Its toolbar copy action is enabled only when one or more views are
+selected and no other edit or copy operation locks navigation.
 
 The sharing query uses object type `4230`, principal types `8` and `9`, outer
 joins to `systemuser` and `team`, `distinct`, `latematerialize`, a union filter
@@ -152,6 +166,66 @@ changes and unmount reset the collaborator and invalidate pending work. Generati
 checks after every awaited service step prevent further writes or stale UI updates.
 Already submitted writes cannot be cancelled. All service errors are logged with
 operation context and surfaced through notifications and the dialog.
+
+## Copying system views to personal views
+
+The System views grid permits multiple selected system views. Its copy dialog
+requires selecting an active user as the new owner; it does not modify or share
+the source system views. There is no solution-picker or publish step for this
+direction. The chosen owner is locked on the first attempt so partial retries
+cannot produce a mixed-owner batch.
+
+For each source, the workflow allocates a stable `userqueryid`, checks that exact
+ID with `personalViewExists`, retrieves the source using
+`getSystemViewDefinition`, and creates `userquery` with the source's required and
+supported optional query/layout fields, `querytype: 0` and
+`ownerid@odata.bind` for the selected system user. Numeric table type codes are
+converted to logical names using the shared metadata cache. Source IDs and
+ownership are not copied.
+
+For system-view copies, the service logs the exact `retrieve("savedquery", id,
+columns)` request and a safe response summary to the PPTB event log. The summary
+includes each required field's type and, for strings, character count and whether
+it is blank; it does not log the XML contents. Validation errors identify the
+specific missing or blank required fields.
+
+If create fails or its response is lost, the dialog remains open with the same
+ID. Retry first checks for that userquery, preventing a duplicate after a lost
+response. Copies run sequentially with per-view progress. Retry skips completed
+views and retains stable IDs and the locked owner. Cancel/close does not roll back
+a submitted write; after a failed attempt, the matching selected-owner or
+all-owner personal-view listing is refreshed when it can show a possibly created
+view. Connection changes and unmount reset the copy collaborator and invalidate
+pending requests. On success, the matching listing is refreshed as well.
+
+## Copying views across environments
+
+The manifest allows 1–10 connection slots. `useConnection` retains the host's
+slot array, including empty slots, and `App` creates a Dataverse service for
+each assigned slot using that numeric slot as `connectionTarget`. Slot 0 is
+always the source; configured slots 1–9 are offered as destinations. The
+service routes FetchXML, execute, retrieve, create and metadata calls through
+the same slot-specific target.
+
+The cross-environment dialog supports personal-to-personal and
+system-to-system copies. Users select one or more configured destination slots;
+active users or unmanaged solutions are loaded independently from each selected
+destination. The source definition is always read from slot 0. Existence checks,
+creates, and solution-component additions are sent through each destination's
+service. Each source/destination pair has a stable new ID and independent
+progress. For personal views, the new owner is selected per destination; for
+system views, the unmanaged solution is selected per destination.
+
+Destinations and per-environment settings lock before the first write and stay
+fixed through retries. Completed pairs are skipped; a system view created before
+a failed solution addition is only added on retry. Connection changes and
+unmount invalidate pending requests and clear the in-memory operation; submitted
+Dataverse writes cannot be cancelled. The model rejects unknown destination
+slots and verifies each selected service is still available.
+
+The focused `crossEnvironmentCopy.test.cjs` suite covers multiple destination
+slots, destination-specific settings, partial retries with stable IDs, and
+numeric connection routing through slot 9.
 
 ## View ownership
 
@@ -345,12 +419,13 @@ npx pptb-validate --skip-url-checks
 Run the service/view-model regression tests without the PPTB host:
 
 ```powershell
-node --test
+npm test
 ```
 
 The suites use Node's built-in test runner and share the TypeScript loader,
 fixtures and fake-service/model factories in [helpers.cjs](tests/helpers.cjs).
-Tests run without rendering UI.
+Tests run without rendering UI. `npm test` runs `node --test`; use the direct
+Node command for focused suites.
 
 | Suite | Coverage |
 | --- | --- |
@@ -365,12 +440,38 @@ Tests run without rendering UI.
 | [systemViewCopyService.test.cjs](tests/systemViewCopyService.test.cjs) | Unmanaged solutions, definition validation, stable-ID creation, solution-component payloads and logging |
 | [systemViewCopy.test.cjs](tests/systemViewCopy.test.cjs) | Selection gates, solution loading, sequential copying, partial retries and lost create responses |
 | [systemViewCopyLifecycle.test.cjs](tests/systemViewCopyLifecycle.test.cjs) | Duplicate submissions, cancellation, read failures and connection/unmount invalidation at every copy stage |
+| [personalViewCopy.test.cjs](tests/personalViewCopy.test.cjs) | Saved-query definition reads, userquery creation/existence checks, stable-ID retries and invalidation |
+| [crossEnvironmentCopy.test.cjs](tests/crossEnvironmentCopy.test.cjs) | Multi-destination copies, per-environment settings, partial retries and slot routing |
 
 To run a focused suite, pass its path, for example:
 
 ```powershell
 node --test tests\bulkViewAccess.test.cjs
 node --test tests\systemViewCopy.test.cjs tests\systemViewCopyService.test.cjs tests\systemViewCopyLifecycle.test.cjs
+node --test tests\crossEnvironmentCopy.test.cjs
 ```
 
 Run the build as well when changing application code for full TypeScript checking.
+
+## Repository safeguards and releases
+
+Pull requests and pushes to `main` run the CI workflow, which installs from the
+lockfile and checks the build, PPTB package manifest and test suites. The
+required check is named **Build and test**. Dependabot checks npm dependencies
+and GitHub Actions weekly. Actions used by the workflows are pinned to commit
+SHAs, and the CODEOWNERS file requests review from `@LinkeD365`.
+
+GitHub does not apply branch protection from files in the repository. In the
+repository's branch rules for `main`, require pull requests, at least one
+approval, approval from code owners, dismissal of stale approvals, conversation
+resolution and the **Build and test** status check; block force pushes and
+deletion, and apply the rules to administrators. These settings must be enabled
+by a repository administrator.
+
+Releases follow the Release Please structure used by
+[PPTB-EnvManager](https://github.com/LinkeD365/PPTB-EnvManager). Conventional
+commit messages drive the release PR and generated [CHANGELOG.md](CHANGELOG.md).
+Merging that PR creates a version tag; the release workflow builds the tag and
+publishes it to npm with provenance using GitHub's OIDC identity. Before the
+first publish, configure npm trusted publishing for `LinkeD365/ViewStudio`,
+workflow `.github/workflows/release.yml`, and the GitHub `npm` environment.

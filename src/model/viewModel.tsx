@@ -1,10 +1,18 @@
 import { makeAutoObservable, runInAction } from "mobx";
 import { CopySystemViewsModel } from "./copySystemViewsModel";
+import { CopySystemViewsToPersonalModel } from "./copySystemViewsToPersonalModel";
+import { CrossEnvironmentCopyModel } from "./crossEnvironmentCopyModel";
 
 export interface ActiveUser {
   id: string;
   name: string;
   isCurrentUser: boolean;
+}
+
+export interface EnvironmentTargetOption {
+  slot: number;
+  name: string;
+  environment: string;
 }
 
 export interface ViewTable {
@@ -51,6 +59,64 @@ export interface SystemViewCopy {
   definition: SystemViewDefinition | null;
   created: boolean;
   added: boolean;
+}
+
+export interface PersonalViewCopy {
+  source: SystemView;
+  personalViewId: string;
+  definition: SystemViewDefinition | null;
+  completed: boolean;
+}
+
+export interface PersonalEnvironmentCopy {
+  source: PersonalView;
+  destinationSlot: number;
+  targetViewId: string;
+  definition: SystemViewDefinition | null;
+  completed: boolean;
+}
+
+export interface SystemEnvironmentCopy {
+  source: SystemView;
+  destinationSlot: number;
+  targetViewId: string;
+  definition: SystemViewDefinition | null;
+  created: boolean;
+  added: boolean;
+}
+
+export type CrossEnvironmentCopyKind = "personal" | "system";
+
+export interface CrossEnvironmentDestination extends EnvironmentTargetOption {
+  users: ActiveUser[];
+  solutions: UnmanagedSolution[];
+  isLoading: boolean;
+  error: string | null;
+  selectedOwnerId: string | null;
+  lockedOwnerId: string | null;
+  selectedSolution: string | null;
+  lockedSolution: string | null;
+}
+
+export interface CrossEnvironmentCopyDialogProps {
+  kind: CrossEnvironmentCopyKind;
+  sourceCount: number;
+  targets: EnvironmentTargetOption[];
+  selectedTargetSlots: number[];
+  isTargetsLocked: boolean;
+  personalCopies: PersonalEnvironmentCopy[];
+  systemCopies: SystemEnvironmentCopy[];
+  destinations: CrossEnvironmentDestination[];
+  isLoadingOptions: boolean;
+  optionsError: string | null;
+  isCopying: boolean;
+  error: string | null;
+  onTargetsChange: (targetSlots: number[]) => void;
+  onOwnerChange: (slot: number, ownerId: string | null) => void;
+  onSolutionChange: (slot: number, uniqueName: string | null) => void;
+  onRetryOptions: () => Promise<void>;
+  onCopy: () => Promise<void>;
+  onCancel: () => void;
 }
 
 export interface ViewAccess {
@@ -108,8 +174,11 @@ export interface ViewDataService {
   getSystemViews(tableLogicalName: string): Promise<SystemView[]>;
   getUnmanagedSolutions(): Promise<UnmanagedSolution[]>;
   getPersonalViewDefinition(viewId: string): Promise<SystemViewDefinition>;
+  getSystemViewDefinition(viewId: string): Promise<SystemViewDefinition>;
   systemViewExists(viewId: string): Promise<boolean>;
+  personalViewExists(viewId: string): Promise<boolean>;
   createSystemView(viewId: string, definition: SystemViewDefinition): Promise<void>;
+  createPersonalView(viewId: string, definition: SystemViewDefinition, ownerId: string): Promise<void>;
   addSystemViewToSolution(viewId: string, solutionUniqueName: string): Promise<void>;
   getViewAccess(viewId: string): Promise<ViewAccess[]>;
   getUserViewAccessMask(viewId: string, userId: string): Promise<number>;
@@ -122,11 +191,12 @@ export interface dvServiceProps {
   connection: ToolBoxAPI.DataverseConnection | null;
   dvApi: DataverseAPI.API;
   onLog: (message: string, type?: "info" | "success" | "warning" | "error") => void;
+  connectionTarget?: ToolBoxAPI.ConnectionTarget;
 }
 
 export interface ViewStudioProps {
-  connection: ToolBoxAPI.DataverseConnection | null;
-  dvSvc: ViewDataService | null;
+  connections: Array<ToolBoxAPI.DataverseConnection | null>;
+  connectionServices: Array<ViewDataService | null>;
   vm: ViewModel;
   onLog: (message: string, type?: "info" | "success" | "warning" | "error") => void;
   notifyError: (message: string) => void;
@@ -144,10 +214,12 @@ export interface ViewStudioHeaderProps {
   changeOwnerDisabled: boolean;
   addUsersDisabled: boolean;
   copyViewsDisabled: boolean;
+  copyToEnvironmentDisabled: boolean;
   selectedViewCount: number;
   onChangeOwner: () => void;
   onAddUsers: () => void;
   onCopyViews: () => void;
+  onCopyViewsToEnvironment: () => void;
   onOwnerChange: (ownerId: string | null) => void;
   onTableChange: (logicalName: string) => void;
   onRefresh: () => Promise<void>;
@@ -168,11 +240,29 @@ export interface SystemViewsProps {
   isLoadingTables: boolean;
   tablesError: string | null;
   views: SystemView[];
+  selectedViewIds: string[];
   isLoadingViews: boolean;
   error: string | null;
   refreshDisabled: boolean;
+  copyDisabled: boolean;
+  copyToEnvironmentDisabled: boolean;
   onTableChange: (logicalName: string) => void;
+  onSelectViews: (views: SystemView[]) => void;
   onRefresh: () => Promise<void>;
+  onCopyToPersonal: () => void;
+  onCopyToEnvironment: () => void;
+}
+
+export interface CopySystemViewToPersonalDialogProps {
+  copies: PersonalViewCopy[];
+  users: ActiveUser[];
+  selectedOwnerId: string | null;
+  lockedOwnerId: string | null;
+  isCopying: boolean;
+  error: string | null;
+  onOwnerChange: (ownerId: string | null) => void;
+  onCopy: () => Promise<void>;
+  onCancel: () => void;
 }
 
 export interface ViewOwnerDialogProps {
@@ -255,8 +345,11 @@ export interface ViewAccessEditorProps {
 
 export class ViewModel {
   copySystemViews = new CopySystemViewsModel();
+  copySystemViewToPersonal = new CopySystemViewsToPersonalModel();
+  crossEnvironmentCopy = new CrossEnvironmentCopyModel();
   activeTab: ViewStudioTab = "personal";
   systemViews: SystemView[] = [];
+  selectedSystemViews: SystemView[] = [];
   selectedSystemTableLogicalName: string | null = null;
   isLoadingSystemViews = false;
   systemViewsError: string | null = null;
@@ -314,7 +407,9 @@ export class ViewModel {
   get accessNavigationLocked(): boolean {
     return this.hasAccessChanges || this.isSavingViewAccess || this.ownerChangeViews.length > 0 || this.isChangingOwner
       || this.bulkAccessViews.length > 0 || this.isSavingBulkAccess
-      || this.copySystemViews.isOpen || this.copySystemViews.isCopying;
+      || this.copySystemViews.isOpen || this.copySystemViews.isCopying
+      || this.copySystemViewToPersonal.isOpen || this.copySystemViewToPersonal.isCopying
+      || this.crossEnvironmentCopy.isOpen || this.crossEnvironmentCopy.isCopying;
   }
 
   get canChangeViewOwners(): boolean {
@@ -340,6 +435,7 @@ export class ViewModel {
   resetSystemViews(): void {
     this.systemViewsRequest++;
     this.systemViews = [];
+    this.selectedSystemViews = [];
     this.selectedSystemTableLogicalName = null;
     this.isLoadingSystemViews = false;
     this.systemViewsError = null;
@@ -354,6 +450,7 @@ export class ViewModel {
     this.systemViewsRequest++;
     this.selectedSystemTableLogicalName = logicalName;
     this.systemViews = [];
+    this.selectedSystemViews = [];
     this.systemViewsError = null;
     this.isLoadingSystemViews = true;
   }
@@ -363,6 +460,7 @@ export class ViewModel {
     if (tableLogicalName === null) return;
     const request = ++this.systemViewsRequest;
     this.systemViews = [];
+    this.selectedSystemViews = [];
     this.systemViewsError = null;
     this.isLoadingSystemViews = true;
     try {
@@ -382,6 +480,26 @@ export class ViewModel {
         if (request === this.systemViewsRequest) this.isLoadingSystemViews = false;
       });
     }
+  }
+
+  beginCopySystemViewToPersonal(): void {
+    if (this.activeTab !== "system" || this.accessNavigationLocked || this.isLoadingSystemViews) {
+      throw new Error("Finish or discard existing changes before copying system views.");
+    }
+    const ids = new Set(this.selectedSystemViews.map((view) => view.id));
+    const sources = this.systemViews.filter((view) => ids.has(view.id));
+    if (sources.length !== ids.size || sources.length === 0) {
+      throw new Error("Select one or more system views from the current listing.");
+    }
+    this.copySystemViewToPersonal.begin(sources);
+  }
+
+  selectSystemViews(views: SystemView[]): void {
+    if (this.accessNavigationLocked || this.isLoadingSystemViews) return;
+    const ids = new Set(views.map((view) => view.id));
+    const currentViews = this.systemViews.filter((view) => ids.has(view.id));
+    if (currentViews.length !== ids.size) throw new Error("Select system views from the current listing.");
+    this.selectedSystemViews = currentViews;
   }
 
   beginAddUsersToViews(): void {
@@ -764,6 +882,8 @@ export class ViewModel {
     this.resetOwnerChange();
     this.resetBulkAccess();
     this.copySystemViews.reset();
+    this.copySystemViewToPersonal.reset();
+    this.crossEnvironmentCopy.reset();
     this.clearSelectedView();
     this.tablesRequest++;
     this.tables = [];

@@ -9,6 +9,8 @@ import { ViewOwnerDialog } from "./viewOwnerDialog";
 import { AddViewUsersDialog } from "./addViewUsersDialog";
 import { SystemViews } from "./systemViews";
 import { CopySystemViewsDialog } from "./copySystemViewsDialog";
+import { CopySystemViewToPersonalDialog } from "./copySystemViewToPersonalDialog";
+import { CrossEnvironmentCopyDialog } from "./crossEnvironmentCopyDialog";
 
 const useStyles = makeStyles({
   root: {
@@ -36,7 +38,16 @@ const useStyles = makeStyles({
 });
 
 export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element => {
-  const { connection, dvSvc, vm, onLog, notifyError, notifySuccess } = props;
+  const { connections, connectionServices, vm, onLog, notifyError, notifySuccess } = props;
+  const connection = connections[0] ?? null;
+  const dvSvc = connectionServices[0] ?? null;
+  const destinationTargets = connections.flatMap((target, slot) => target && slot > 0
+    ? [{ slot, name: target.name, environment: target.environment }]
+    : []);
+  const targetServices = new Map<number, NonNullable<(typeof connectionServices)[number]>>();
+  connectionServices.forEach((service, slot) => {
+    if (service && slot > 0) targetServices.set(slot, service);
+  });
   const styles = useStyles();
   const tabsId = useId("view-studio-tabs");
 
@@ -90,6 +101,8 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
       vm.resetOwnerChange();
       vm.resetBulkAccess();
       vm.copySystemViews.reset();
+      vm.copySystemViewToPersonal.reset();
+      vm.crossEnvironmentCopy.reset();
       vm.resetSystemViews();
     };
   }, [loadUsers, vm]);
@@ -280,6 +293,113 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
     if (attempted) void loadSystemViews();
   }, [vm, loadSystemViews]);
 
+  const beginCopySystemViewToPersonal = useCallback(() => {
+    try {
+      vm.beginCopySystemViewToPersonal();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to copy the system view.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [vm, onLog, notifyError]);
+
+  const copySystemViewToPersonal = useCallback(async () => {
+    if (!dvSvc) return;
+    const sourceTable = vm.copySystemViewToPersonal.copies[0]?.source.entityName;
+    const ownerId = vm.copySystemViewToPersonal.selectedOwnerId;
+    const count = vm.copySystemViewToPersonal.copies.length;
+    try {
+      if (await vm.copySystemViewToPersonal.copyToPersonal(dvSvc)) {
+        notifySuccess(`${count} system ${count === 1 ? "view" : "views"} copied to personal views for the selected user.`);
+        if (vm.selectedOwnerId === ownerId
+          || (vm.selectedOwnerId === null && vm.selectedTableLogicalName === sourceTable)) {
+          await loadViews();
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to copy the system view.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [dvSvc, vm, loadViews, onLog, notifyError, notifySuccess]);
+
+  const selectCopyOwner = useCallback((ownerId: string | null) => {
+    try {
+      vm.copySystemViewToPersonal.selectOwner(ownerId, vm.activeUsers);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to select this view owner.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [vm, onLog, notifyError]);
+
+  const cancelCopySystemViewToPersonal = useCallback(() => {
+    const attempted = vm.copySystemViewToPersonal.error !== null;
+    const sourceTable = vm.copySystemViewToPersonal.copies[0]?.source.entityName;
+    const ownerId = vm.copySystemViewToPersonal.lockedOwnerId
+      ?? vm.copySystemViewToPersonal.selectedOwnerId;
+    vm.copySystemViewToPersonal.cancel();
+    if (attempted && (vm.selectedOwnerId === ownerId
+      || (vm.selectedOwnerId === null && vm.selectedTableLogicalName === sourceTable))) {
+      void loadViews();
+    }
+  }, [vm, loadViews]);
+
+  const loadCrossEnvironmentOptions = useCallback(async () => {
+    try {
+      await vm.crossEnvironmentCopy.loadOptions(targetServices);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load destination options.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [targetServices, vm, onLog, notifyError]);
+
+  const beginCopyPersonalViewsToEnvironment = useCallback(() => {
+    try {
+      vm.crossEnvironmentCopy.beginPersonal(vm.selectedViews, destinationTargets);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to copy personal views to another environment.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [vm, destinationTargets, onLog, notifyError]);
+
+  const beginCopySystemViewsToEnvironment = useCallback(() => {
+    try {
+      vm.crossEnvironmentCopy.beginSystem(vm.selectedSystemViews, destinationTargets);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to copy system views to another environment.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [vm, destinationTargets, onLog, notifyError]);
+
+  const selectCrossEnvironmentTargets = useCallback((slots: number[]) => {
+    void vm.crossEnvironmentCopy.selectTargets(slots, targetServices).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "Unable to load destination options.";
+      onLog(message, "error");
+      notifyError(message);
+    });
+  }, [vm, targetServices, onLog, notifyError]);
+
+  const copyViewsToEnvironment = useCallback(async () => {
+    if (!dvSvc) return;
+    const count = vm.crossEnvironmentCopy.kind === "personal"
+      ? vm.crossEnvironmentCopy.personalCopies.length
+      : vm.crossEnvironmentCopy.systemCopies.length;
+    try {
+      if (await vm.crossEnvironmentCopy.copy(dvSvc, targetServices)) {
+        notifySuccess(`${count} view cop${count === 1 ? "y" : "ies"} completed across the selected environments.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to copy views to another environment.";
+      onLog(message, "error");
+      notifyError(message);
+    }
+  }, [dvSvc, targetServices, vm, onLog, notifyError, notifySuccess]);
+  const crossEnvironmentCopyKind = vm.crossEnvironmentCopy.kind;
+
   return (
     <div className={styles.root}>
       <TabList
@@ -327,7 +447,10 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
         addUsersDisabled={!connection || !vm.canChangeViewOwners}
         onAddUsers={beginAddUsers}
         copyViewsDisabled={!connection || !vm.canChangeViewOwners}
+        copyToEnvironmentDisabled={!connection || destinationTargets.length === 0 || vm.selectedViews.length === 0
+          || vm.accessNavigationLocked || vm.isLoadingPersonalViews || vm.isLoadingUsers}
         onCopyViews={beginCopyViews}
+        onCopyViewsToEnvironment={beginCopyPersonalViewsToEnvironment}
       />
       {!connection ? (
         <MessageBar>No active Dataverse connection. Connect to an environment to view personal views.</MessageBar>
@@ -429,14 +552,84 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
           isLoadingTables={vm.isLoadingTables || vm.isLoadingUsers}
           tablesError={vm.tablesError}
           views={vm.systemViews}
+          selectedViewIds={vm.selectedSystemViews.map((view) => view.id)}
           isLoadingViews={vm.isLoadingSystemViews}
           error={vm.systemViewsError}
           refreshDisabled={!connection || vm.isLoadingUsers || vm.isLoadingTables || vm.isLoadingSystemViews
             || vm.accessNavigationLocked || (vm.selectedSystemTableLogicalName === null && !vm.tablesError)}
+          copyDisabled={!connection || vm.selectedSystemViews.length === 0 || vm.isLoadingUsers
+            || vm.isLoadingSystemViews || vm.accessNavigationLocked}
+          copyToEnvironmentDisabled={!connection || destinationTargets.length === 0 || vm.selectedSystemViews.length === 0
+            || vm.isLoadingUsers || vm.isLoadingSystemViews || vm.accessNavigationLocked}
           onTableChange={selectSystemTable}
+          onSelectViews={(views) => {
+            try {
+              vm.selectSystemViews(views);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unable to select these system views.";
+              onLog(message, "error");
+              notifyError(message);
+            }
+          }}
           onRefresh={vm.tablesError ? loadTables : loadSystemViews}
+          onCopyToPersonal={beginCopySystemViewToPersonal}
+          onCopyToEnvironment={beginCopySystemViewsToEnvironment}
         />
       </div>
+      {connection && crossEnvironmentCopyKind && vm.crossEnvironmentCopy.isOpen && (
+        <CrossEnvironmentCopyDialog
+          kind={crossEnvironmentCopyKind}
+          sourceCount={crossEnvironmentCopyKind === "personal"
+            ? vm.crossEnvironmentCopy.personalSources.length
+            : vm.crossEnvironmentCopy.systemSources.length}
+          targets={vm.crossEnvironmentCopy.targets}
+          selectedTargetSlots={vm.crossEnvironmentCopy.selectedTargetSlots}
+          isTargetsLocked={vm.crossEnvironmentCopy.destinations.some((destination) =>
+            destination.lockedOwnerId !== null || destination.lockedSolution !== null)}
+          personalCopies={vm.crossEnvironmentCopy.personalCopies}
+          systemCopies={vm.crossEnvironmentCopy.systemCopies}
+          destinations={vm.crossEnvironmentCopy.destinations}
+          isLoadingOptions={vm.crossEnvironmentCopy.isLoadingOptions}
+          optionsError={vm.crossEnvironmentCopy.optionsError}
+          isCopying={vm.crossEnvironmentCopy.isCopying}
+          error={vm.crossEnvironmentCopy.error}
+          onTargetsChange={selectCrossEnvironmentTargets}
+          onOwnerChange={(slot, ownerId) => {
+            try {
+              vm.crossEnvironmentCopy.selectOwner(slot, ownerId);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unable to select the destination owner.";
+              onLog(message, "error");
+              notifyError(message);
+            }
+          }}
+          onSolutionChange={(slot, uniqueName) => {
+            try {
+              vm.crossEnvironmentCopy.selectSolution(slot, uniqueName);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unable to select the destination solution.";
+              onLog(message, "error");
+              notifyError(message);
+            }
+          }}
+          onRetryOptions={loadCrossEnvironmentOptions}
+          onCopy={copyViewsToEnvironment}
+          onCancel={() => vm.crossEnvironmentCopy.cancel()}
+        />
+      )}
+      {connection && vm.copySystemViewToPersonal.isOpen && (
+        <CopySystemViewToPersonalDialog
+          copies={vm.copySystemViewToPersonal.copies}
+          users={vm.activeUsers}
+          selectedOwnerId={vm.copySystemViewToPersonal.selectedOwnerId}
+          lockedOwnerId={vm.copySystemViewToPersonal.lockedOwnerId}
+          isCopying={vm.copySystemViewToPersonal.isCopying}
+          error={vm.copySystemViewToPersonal.error}
+          onOwnerChange={selectCopyOwner}
+          onCopy={copySystemViewToPersonal}
+          onCancel={cancelCopySystemViewToPersonal}
+        />
+      )}
     </div>
   );
 });

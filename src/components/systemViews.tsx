@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Combobox, makeStyles, MessageBar, Option, Spinner, tokens, Toolbar, ToolbarButton, Tooltip } from "@fluentui/react-components";
-import { ArrowClockwise24Regular } from "@fluentui/react-icons";
+import { ArrowClockwise24Regular, Copy24Regular, CopyArrowRight24Regular } from "@fluentui/react-icons";
 import { AllCommunityModule, themeQuartz } from "ag-grid-community";
 import type { ColDef } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
@@ -20,7 +20,14 @@ const useStyles = makeStyles({
 });
 
 const columns: ColDef<SystemView>[] = [
-  { field: "name", headerName: "View name", minWidth: 220, flex: 1, initialSort: "asc" },
+  {
+    field: "name",
+    headerName: "View name",
+    minWidth: 220,
+    flex: 1,
+    initialSort: "asc",
+    comparator: (valueA, valueB) => (valueA ?? "").localeCompare(valueB ?? "", undefined, { sensitivity: "base" }),
+  },
   { field: "tableName", headerName: "Table", minWidth: 200 },
   {
     field: "modifiedOn",
@@ -33,12 +40,26 @@ const columns: ColDef<SystemView>[] = [
 
 export const SystemViews = ({
   connected, tables, selectedTableLogicalName, tableDisabled, isLoadingTables, tablesError,
-  views, isLoadingViews, error, refreshDisabled, onTableChange, onRefresh,
+  views, selectedViewIds, isLoadingViews, error, refreshDisabled, copyDisabled, copyToEnvironmentDisabled,
+  onTableChange, onSelectViews, onRefresh, onCopyToPersonal, onCopyToEnvironment,
 }: SystemViewsProps): React.JSX.Element => {
   const styles = useStyles();
   const [search, setSearch] = useState("");
+  const grid = useRef<AgGridReact<SystemView>>(null);
+  const syncingSelection = useRef(false);
   const visibleTables = tables.filter((table) => table.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const selectedName = tables.find((table) => table.logicalName === selectedTableLogicalName)?.name ?? "";
+  useEffect(() => {
+    syncingSelection.current = true;
+    try {
+      grid.current?.api?.forEachNode((node) => {
+        const shouldSelect = !!node.id && selectedViewIds.includes(node.id);
+        if (node.isSelected() !== shouldSelect) node.setSelected(shouldSelect);
+      });
+    } finally {
+      syncingSelection.current = false;
+    }
+  }, [selectedViewIds, views]);
   return (
     <>
       <div className={styles.header}>
@@ -60,6 +81,22 @@ export const SystemViews = ({
           {visibleTables.length === 0 && <Option disabled>No matching tables</Option>}
         </Combobox>
         <Toolbar className={styles.actions} aria-label="System views actions">
+          <Tooltip content="Copy selected views to another environment" relationship="label">
+            <ToolbarButton
+              aria-label="Copy selected views to another environment"
+              icon={<CopyArrowRight24Regular />}
+              disabled={copyToEnvironmentDisabled}
+              onClick={onCopyToEnvironment}
+            />
+          </Tooltip>
+          <Tooltip content="Copy selected system views to personal views" relationship="label">
+            <ToolbarButton
+              aria-label="Copy selected system views to personal views"
+              icon={<Copy24Regular />}
+              disabled={copyDisabled}
+              onClick={onCopyToPersonal}
+            />
+          </Tooltip>
           <Tooltip content="Refresh system views" relationship="label">
             <ToolbarButton
               aria-label="Refresh system views"
@@ -85,6 +122,7 @@ export const SystemViews = ({
       ) : (
         <div className={styles.grid}>
           <AgGridReact<SystemView>
+            ref={grid}
             modules={[AllCommunityModule]}
             onGridReady={({ api }) => api.setGridAriaProperty("label", "System views")}
             theme={themeQuartz}
@@ -92,6 +130,17 @@ export const SystemViews = ({
             columnDefs={columns}
             getRowId={({ data }) => data.id}
             defaultColDef={{ sortable: true, filter: true, resizable: true }}
+            rowSelection={{
+              mode: "multiRow",
+              checkboxes: true,
+              headerCheckbox: true,
+              selectAll: "filtered",
+              enableClickSelection: true,
+            }}
+            onSelectionChanged={(event) => {
+              if (syncingSelection.current) return;
+              onSelectViews(event.api.getSelectedRows());
+            }}
             pagination
             paginationPageSize={25}
             overlayNoRowsTemplate="No system views found for this table."

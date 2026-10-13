@@ -9,12 +9,44 @@ export class dvService implements ViewDataService {
   connection: ToolBoxAPI.DataverseConnection | null;
   dvApi: DataverseAPI.API;
   onLog: (message: string, type?: "info" | "success" | "warning" | "error") => void;
+  connectionTarget: ToolBoxAPI.ConnectionTarget | undefined;
   batchSize = 2;
   private entityMetadata: Promise<Map<string, DataverseAPI.EntityMetadata>> | null = null;
   constructor(props: dvServiceProps) {
     this.connection = props.connection;
     this.dvApi = props.dvApi;
     this.onLog = props.onLog;
+    this.connectionTarget = props.connectionTarget;
+  }
+
+  private fetchXmlQuery(fetchXml: string): ReturnType<DataverseAPI.API["fetchXmlQuery"]> {
+    return this.connectionTarget === undefined
+      ? this.dvApi.fetchXmlQuery(fetchXml)
+      : this.dvApi.fetchXmlQuery(fetchXml, this.connectionTarget);
+  }
+
+  private execute(request: Parameters<DataverseAPI.API["execute"]>[0]): ReturnType<DataverseAPI.API["execute"]> {
+    return this.connectionTarget === undefined
+      ? this.dvApi.execute(request)
+      : this.dvApi.execute(request, this.connectionTarget);
+  }
+
+  private retrieve(entityName: string, id: string, columns: string[]): ReturnType<DataverseAPI.API["retrieve"]> {
+    return this.connectionTarget === undefined
+      ? this.dvApi.retrieve(entityName, id, columns)
+      : this.dvApi.retrieve(entityName, id, columns, this.connectionTarget);
+  }
+
+  private create(entityName: string, record: Record<string, unknown>): ReturnType<DataverseAPI.API["create"]> {
+    return this.connectionTarget === undefined
+      ? this.dvApi.create(entityName, record)
+      : this.dvApi.create(entityName, record, this.connectionTarget);
+  }
+
+  private getAllEntitiesMetadata(properties: string[]): ReturnType<DataverseAPI.API["getAllEntitiesMetadata"]> {
+    return this.connectionTarget === undefined
+      ? this.dvApi.getAllEntitiesMetadata(properties)
+      : this.dvApi.getAllEntitiesMetadata(properties, this.connectionTarget);
   }
 
   async getActiveUsers(): Promise<ActiveUser[]> {
@@ -35,9 +67,9 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     const [result, currentUser] = await Promise.all([
-      this.callDataverse("fetchXmlQuery (active users)", () => this.dvApi.fetchXmlQuery(fetchXml), fetchXml),
+      this.callDataverse("fetchXmlQuery (active users)", () => this.fetchXmlQuery(fetchXml), fetchXml),
       this.callDataverse("execute (WhoAmI)", () =>
-        this.dvApi.execute({ operationName: "WhoAmI", operationType: "function" })),
+        this.execute({ operationName: "WhoAmI", operationType: "function" })),
     ]);
     const currentUserId = currentUser.UserId;
     if (typeof currentUserId !== "string") {
@@ -100,7 +132,7 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     const result = await this.callDataverse(
-      "fetchXmlQuery (personal views)", () => this.dvApi.fetchXmlQuery(fetchXml), fetchXml,
+      "fetchXmlQuery (personal views)", () => this.fetchXmlQuery(fetchXml), fetchXml,
     );
 
     return result.value.map((record) => {
@@ -144,13 +176,14 @@ export class dvService implements ViewDataService {
       '    <attribute name="description" />',
       '    <filter>',
       `      <condition attribute="returnedtypecode" operator="eq" value="${objectTypeCode}" />`,
+      '      <condition attribute="querytype" operator="ne" value="8192" />',
       '    </filter>',
       '    <order attribute="name" />',
       '  </entity>',
       '</fetch>',
     ].join("");
     return this.callDataverse("fetchXmlQuery (system views)", async () => {
-      const result = await this.dvApi.fetchXmlQuery(fetchXml);
+      const result = await this.fetchXmlQuery(fetchXml);
       return result.value.map((record) => {
         if (typeof record.savedqueryid !== "string" || typeof record.name !== "string") {
           throw new Error("Dataverse returned a system view without an ID or name.");
@@ -187,7 +220,7 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     return this.callDataverse("fetchXmlQuery (unmanaged solutions)", async () => {
-      const result = await this.dvApi.fetchXmlQuery(fetchXml);
+      const result = await this.fetchXmlQuery(fetchXml);
       const solutions: UnmanagedSolution[] = [];
       for (const record of result.value) {
         if (typeof record.ismanaged !== "boolean" || typeof record.isvisible !== "boolean") {
@@ -208,81 +241,163 @@ export class dvService implements ViewDataService {
   }
 
   async getPersonalViewDefinition(viewId: string): Promise<SystemViewDefinition> {
-    return this.callDataverse(`retrieve (personal view definition: ${viewId})`, async () => {
+    return this.getViewDefinition("userquery", viewId, "personal");
+  }
+
+  async getSystemViewDefinition(viewId: string): Promise<SystemViewDefinition> {
+    return this.getViewDefinition("savedquery", viewId, "system");
+  }
+
+  private async getViewDefinition(
+    entityName: "userquery" | "savedquery",
+    viewId: string,
+    viewType: "personal" | "system",
+  ): Promise<SystemViewDefinition> {
+    return this.callDataverse(`retrieve (${viewType} view definition: ${viewId})`, async () => {
       this.validateViewId(viewId);
-      const record = await this.dvApi.retrieve("userquery", viewId, [
+      const columns: string[] = [
         "name", "returnedtypecode", "fetchxml", "layoutxml", ...optionalViewDefinitionFields,
-      ]);
+      ];
+      if (viewType === "system") {
+        this.onLog(
+          `Copy source request: dataverseAPI.retrieve("${entityName}", "${viewId}", ${JSON.stringify(columns)})`,
+          "info",
+        );
+      }
+      const record = await this.retrieve(entityName, viewId, columns);
+      if (viewType === "system") {
+        const describe = (value: unknown): string => {
+          if (value === undefined) return "missing";
+          if (value === null) return "null";
+          if (typeof value === "string") return `string (${value.length} chars${value.trim() ? "" : ", blank"})`;
+          return typeof value;
+        };
+        this.onLog(
+          `Copy source response for savedquery ${viewId}: name=${describe(record.name)}, `
+          + `returnedtypecode=${describe(record.returnedtypecode)}, fetchxml=${describe(record.fetchxml)}, `
+          + `layoutxml=${describe(record.layoutxml)}`,
+          "info",
+        );
+      }
       const { name, fetchxml, layoutxml } = record;
       if (typeof name !== "string" || !name.trim() || typeof fetchxml !== "string" || !fetchxml.trim()
         || typeof layoutxml !== "string" || !layoutxml.trim()) {
-        throw new Error("The personal view does not have a valid name, FetchXML and layout XML to copy.");
+        const invalidFields = [
+          ...(typeof name !== "string" || !name.trim() ? ["name"] : []),
+          ...(typeof fetchxml !== "string" || !fetchxml.trim() ? ["fetchxml"] : []),
+          ...(typeof layoutxml !== "string" || !layoutxml.trim() ? ["layoutxml"] : []),
+        ];
+        const labels = invalidFields.map((field) => field === "fetchxml" ? "FetchXML"
+          : field === "layoutxml" ? "layout XML" : field).join(", ");
+        throw new Error(`The ${viewType} view has missing or blank ${labels}; these fields are required to copy.`);
       }
       let logicalName = record.returnedtypecode;
       if (typeof logicalName !== "string" || !/^[a-z][a-z0-9_]*$/i.test(logicalName)) {
         const code = typeof logicalName === "number" ? logicalName
           : typeof logicalName === "string" && /^\d+$/.test(logicalName) ? Number(logicalName) : NaN;
-        if (!Number.isSafeInteger(code) || code <= 0) throw new Error("The personal view has an invalid table type code.");
+        if (!Number.isSafeInteger(code) || code <= 0) throw new Error(`The ${viewType} view has an invalid table type code.`);
         const metadata = await this.getEntityMetadata();
         logicalName = Array.from(metadata.values()).find((entity) => entity.ObjectTypeCode === code)?.LogicalName;
       }
       if (typeof logicalName !== "string" || !/^[a-z][a-z0-9_]*$/i.test(logicalName)) {
-        throw new Error("The personal view's table could not be resolved.");
+        throw new Error(`The ${viewType} view's table could not be resolved.`);
       }
       const definition: SystemViewDefinition = { name, returnedtypecode: logicalName, fetchxml, layoutxml };
       for (const field of optionalViewDefinitionFields) {
         const value = record[field];
         if (value === null || value === undefined) continue;
-        if (typeof value !== "string") throw new Error(`The personal view has an invalid ${field} value.`);
+        if (typeof value !== "string") throw new Error(`The ${viewType} view has an invalid ${field} value.`);
         definition[field] = value;
       }
       return definition;
     });
   }
 
+  async personalViewExists(viewId: string): Promise<boolean> {
+    return this.viewExists("userquery", "userqueryid", viewId, "personal");
+  }
+
   async systemViewExists(viewId: string): Promise<boolean> {
+    return this.viewExists("savedquery", "savedqueryid", viewId, "system");
+  }
+
+  private async viewExists(
+    entityName: "userquery" | "savedquery",
+    idField: "userqueryid" | "savedqueryid",
+    viewId: string,
+    viewType: "personal" | "system",
+  ): Promise<boolean> {
     const fetchXml = [
-      '<fetch top="1"><entity name="savedquery"><attribute name="savedqueryid" /><filter>',
-      `<condition attribute="savedqueryid" operator="eq" value="${viewId}" />`,
+      `<fetch top="1"><entity name="${entityName}"><attribute name="${idField}" /><filter>`,
+      `<condition attribute="${idField}" operator="eq" value="${viewId}" />`,
       '</filter></entity></fetch>',
     ].join("");
-    return this.callDataverse(`fetchXmlQuery (system view copy: ${viewId})`, async () => {
+    return this.callDataverse(`fetchXmlQuery (${viewType} view copy: ${viewId})`, async () => {
       this.validateViewId(viewId);
-      const result = await this.dvApi.fetchXmlQuery(fetchXml);
+      const result = await this.fetchXmlQuery(fetchXml);
       if (result.value.length === 0) return false;
-      const id = result.value[0].savedqueryid;
+      const id = result.value[0][idField];
       if (typeof id !== "string" || id.toLowerCase() !== viewId.toLowerCase()) {
-        throw new Error("Dataverse returned an unexpected system view while checking the copy.");
+        throw new Error(`Dataverse returned an unexpected ${viewType} view while checking the copy.`);
       }
       return true;
     }, fetchXml);
   }
 
-  async createSystemView(viewId: string, definition: SystemViewDefinition): Promise<void> {
-    await this.callDataverse(`create (system view: ${viewId})`, async () => {
+  async createPersonalView(viewId: string, definition: SystemViewDefinition, ownerId: string): Promise<void> {
+    await this.callDataverse(`create (personal view: ${viewId}, owner: ${ownerId})`, async () => {
       this.validateViewId(viewId);
-      for (const field of ["name", "fetchxml", "layoutxml", "returnedtypecode"] as const) {
-        if (typeof definition[field] !== "string" || !definition[field].trim()) {
-          throw new Error(`The system view requires a valid ${field}.`);
-        }
+      this.validateViewDefinition("personal", definition);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ownerId)) {
+        throw new Error("The personal view owner ID is invalid.");
       }
-      if (!/^[a-z][a-z0-9_]*$/i.test(definition.returnedtypecode)) {
-        throw new Error("The system view requires a table logical name.");
-      }
-      await this.dvApi.create("savedquery", {
+      await this.create("userquery", {
         ...definition,
-        savedqueryid: viewId,
+        userqueryid: viewId,
         querytype: 0,
-        isdefault: false,
+        "ownerid@odata.bind": `/systemusers(${ownerId})`,
       });
     });
+  }
+
+  async createSystemView(viewId: string, definition: SystemViewDefinition): Promise<void> {
+    await this.createView("savedquery", "system", viewId, definition);
+  }
+
+  private async createView(
+    entityName: "userquery" | "savedquery",
+    viewType: "personal" | "system",
+    viewId: string,
+    definition: SystemViewDefinition,
+  ): Promise<void> {
+    await this.callDataverse(`create (${viewType} view: ${viewId})`, async () => {
+      this.validateViewId(viewId);
+      this.validateViewDefinition(viewType, definition);
+      await this.create(entityName, {
+        ...definition,
+        [entityName === "savedquery" ? "savedqueryid" : "userqueryid"]: viewId,
+        querytype: 0,
+        ...(entityName === "savedquery" ? { isdefault: false } : {}),
+      });
+    });
+  }
+
+  private validateViewDefinition(viewType: "personal" | "system", definition: SystemViewDefinition): void {
+    for (const field of ["name", "fetchxml", "layoutxml", "returnedtypecode"] as const) {
+      if (typeof definition[field] !== "string" || !definition[field].trim()) {
+        throw new Error(`The ${viewType} view requires a valid ${field}.`);
+      }
+    }
+    if (!/^[a-z][a-z0-9_]*$/i.test(definition.returnedtypecode)) {
+      throw new Error(`The ${viewType} view requires a table logical name.`);
+    }
   }
 
   async addSystemViewToSolution(viewId: string, solutionUniqueName: string): Promise<void> {
     await this.callDataverse(`AddSolutionComponent (view: ${viewId}, solution: ${solutionUniqueName})`, async () => {
       this.validateViewId(viewId);
       if (!solutionUniqueName?.trim()) throw new Error("Select an unmanaged solution.");
-      await this.dvApi.execute({
+      await this.execute({
         operationName: "AddSolutionComponent",
         operationType: "action",
         parameters: {
@@ -337,7 +452,7 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     const result = await this.callDataverse(`fetchXmlQuery (view access: ${viewId})`, () =>
-      this.dvApi.fetchXmlQuery(fetchXml), fetchXml);
+      this.fetchXmlQuery(fetchXml), fetchXml);
     return result.value.map((record) => {
       console.log(record);
       const id = record.principalid;
@@ -381,7 +496,7 @@ export class dvService implements ViewDataService {
     return this.callDataverse(`fetchXmlQuery (user view access: ${viewId}, user: ${userId})`, async () => {
       const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!guid.test(viewId) || !guid.test(userId)) throw new Error("The view or user ID is invalid.");
-      const result = await this.dvApi.fetchXmlQuery(fetchXml);
+      const result = await this.fetchXmlQuery(fetchXml);
       if (result.value.length === 0) return 0;
       const mask = result.value[0].accessrightsmask;
       if (typeof mask !== "number" || !Number.isSafeInteger(mask) || mask < 0) {
@@ -395,7 +510,7 @@ export class dvService implements ViewDataService {
     await this.callDataverse(`Assign (view: ${viewId}, owner: ${ownerId})`, async () => {
       const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!guid.test(viewId) || !guid.test(ownerId)) throw new Error("The view or owner ID is invalid.");
-      await this.dvApi.execute({
+      await this.execute({
         operationName: "Assign",
         operationType: "action",
         parameters: {
@@ -429,7 +544,7 @@ export class dvService implements ViewDataService {
       const principalEntity = principal.principalType === "User"
         ? { "@odata.type": "Microsoft.Dynamics.CRM.systemuser", systemuserid: principal.id }
         : { "@odata.type": "Microsoft.Dynamics.CRM.team", teamid: principal.id };
-      await this.dvApi.execute({
+      await this.execute({
         operationName,
         operationType: "action",
         parameters: mask === 0
@@ -473,7 +588,7 @@ export class dvService implements ViewDataService {
   private getEntityMetadata(): Promise<Map<string, DataverseAPI.EntityMetadata>> {
     if (!this.entityMetadata) {
       this.entityMetadata = this.callDataverse("getAllEntitiesMetadata (tables)", () =>
-        this.dvApi.getAllEntitiesMetadata(["LogicalName", "DisplayName", "ObjectTypeCode"]))
+        this.getAllEntitiesMetadata(["LogicalName", "DisplayName", "ObjectTypeCode"]))
         .then((metadata) => new Map(
           metadata.value.map((entity) => [
             entity.LogicalName,

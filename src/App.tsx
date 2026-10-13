@@ -60,7 +60,7 @@ const useStyles = makeStyles({
 });
 
 function App() {
-  const { connection, refreshConnection } = useConnection();
+  const { connections, refreshConnection } = useConnection();
   const { addLog } = useEventLog();
   const [theme, setTheme] = React.useState<"light" | "dark">("light");
   const styles = useStyles();
@@ -124,14 +124,14 @@ function App() {
     getTheme();
   }, []);
   const [vm] = useState(() => new ViewModel());
-  const dvSvc = useMemo(() => {
-    if (!connection) return null;
-    return new dvService({
-      connection: connection,
+  const connectionServices = useMemo(() => connections.map((connection, slot) =>
+    connection ? new dvService({
+      connection,
       dvApi: window.dataverseAPI,
       onLog: addLog,
-    });
-  }, [connection, addLog]);
+      connectionTarget: slot,
+    }) : null,
+  ), [connections, addLog]);
   const notifyError = useCallback((message: string) => {
     void window.toolboxAPI.utils.showNotification({
       title: "ViewStudio error",
@@ -152,7 +152,14 @@ function App() {
 
   return (
     <FluentProvider theme={theme === "dark" ? webDarkTheme : webLightTheme} className={styles.root} applyStylesToPortals={false}>
-      <ViewStudio connection={connection} dvSvc={dvSvc} vm={vm} onLog={addLog} notifyError={notifyError} notifySuccess={notifySuccess} />
+      <ViewStudio
+        connections={connections}
+        connectionServices={connectionServices}
+        vm={vm}
+        onLog={addLog}
+        notifyError={notifyError}
+        notifySuccess={notifySuccess}
+      />
     </FluentProvider>
   );
 }

@@ -165,7 +165,9 @@ test("system views query savedquery by numeric table code and reuse cached table
   assert.match(queries[0], /<entity name="savedquery">/);
   assert.match(queries[0], /<attribute name="savedqueryid"/);
   assert.match(queries[0], /attribute="returnedtypecode" operator="eq" value="1"/);
+  assert.match(queries[0], /attribute="querytype" operator="ne" value="8192"/);
   assert.match(queries[1], /attribute="returnedtypecode" operator="eq" value="10550"/);
+  assert.match(queries[1], /attribute="querytype" operator="ne" value="8192"/);
   assert.match(queries[0], /<order attribute="name"/);
   assert.doesNotMatch(queries[0], /ownerid|userquery|principalobjectaccess/);
 });
