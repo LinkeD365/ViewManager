@@ -34,7 +34,7 @@
     "validate": "pptb-validate"
   },
   "dependencies": {
-    "@fluentui/react-components": "^9.72.7",
+    "@fluentui/react-components": "^9.74.9",
     "@fluentui/react-icons": "^2.0.314",
     "ag-grid-community": "^36.2.0",
     "ag-grid-react": "^36.2.0",
