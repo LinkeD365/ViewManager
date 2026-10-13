@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@fluentui/react-components": "^9.72.7",
-    "@fluentui/react-icons": "^2.0.314",
+    "@fluentui/react-icons": "^2.0.344",
     "ag-grid-community": "^36.2.0",
     "ag-grid-react": "^36.2.0",
     "mobx": "^6.15.0",
