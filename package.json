@@ -6,7 +6,7 @@
   "features": {
     "connections": {
       "min": 1,
-      "max": 10
+      "max": 7
     }
   },
   "main": "dist/index.html",

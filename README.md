@@ -73,22 +73,29 @@ when it is visible.
 
 ## Copy views across environments
 
-ViewStudio can connect to up to ten Dataverse environments. The primary
-environment is always the source; the additional configured connections are
-available as destinations. Select one or more destination environments in the
-cross-environment copy dialog.
+ViewStudio can connect to up to seven Dataverse environments. The primary
+environment is always the source; up to six additional configured connections
+are available as destinations. Select one or more destination environments in
+the cross-environment copy dialog.
 
 Use **Copy personal views to other environments** on the Personal views tab to
-copy selected personal views as personal views. Choose the new owner separately
-in each destination. Use **Copy system views to other environments** on the
-System views tab to copy selected system views as system views. Choose an
-unmanaged solution separately in each destination.
+copy selected personal views as personal views. Each destination has its own
+portrait card in a three-column, two-row layout: check the environment name to
+include it, choose the new owner at the top of the card (the picker remains
+visible but is disabled until the environment is checked; while its users load,
+the picker is replaced with a loading indicator), and review the views
+listed below. Use **Copy system views to other environments** on the System
+views tab to copy selected system views as system views. Its cards likewise
+list the views and keep the unmanaged-solution picker at the top (disabled
+until the environment is checked, and replaced by a loading indicator while
+solutions load). Click **Copy views** to start.
 
-Copies run sequentially and show progress for each view and destination. If a
-copy fails, retry the remaining work in the same dialog; completed copies are
-skipped and the selected destinations, owners/solutions and copy IDs stay
-locked. Closing the dialog or changing connections does not undo views already
-created. Cross-environment copying requires the connected account to have the
+Copies run sequentially; a green checkmark appears beside each completed view
+in its destination card. If a copy fails, retry the remaining work in the same
+dialog; completed copies are skipped and the selected destinations,
+owners/solutions and copy IDs stay locked. Closing the dialog or changing
+connections does not undo views already created. Cross-environment copying
+requires the connected account to have the
 appropriate read and create privileges in each environment, plus solution
 privileges when copying system views.
 

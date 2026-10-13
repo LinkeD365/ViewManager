@@ -200,15 +200,18 @@ pending requests. On success, the matching listing is refreshed as well.
 
 ## Copying views across environments
 
-The manifest allows 1–10 connection slots. `useConnection` retains the host's
+The manifest allows 1–7 connection slots. `useConnection` retains the host's
 slot array, including empty slots, and `App` creates a Dataverse service for
 each assigned slot using that numeric slot as `connectionTarget`. Slot 0 is
-always the source; configured slots 1–9 are offered as destinations. The
+always the source; configured slots 1–6 are offered as destinations. The
 service routes FetchXML, execute, retrieve, create and metadata calls through
 the same slot-specific target.
 
 The cross-environment dialog supports personal-to-personal and
-system-to-system copies. Users select one or more configured destination slots;
+system-to-system copies. Its destination cards use a fixed three-column by
+two-row portrait grid, supporting at most six destinations plus the primary
+source. Each card includes a checkbox, the owner/solution picker near the top,
+and its source-view list. Users select one or more configured destination slots;
 active users or unmanaged solutions are loaded independently from each selected
 destination. The source definition is always read from slot 0. Existence checks,
 creates, and solution-component additions are sent through each destination's
