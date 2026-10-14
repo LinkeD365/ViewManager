@@ -474,7 +474,10 @@ by a repository administrator.
 Releases follow the Release Please structure used by
 [PPTB-EnvManager](https://github.com/LinkeD365/PPTB-EnvManager). Conventional
 commit messages drive the release PR and generated [CHANGELOG.md](CHANGELOG.md).
-Merging that PR creates a version tag; the release workflow builds the tag and
-publishes it to npm with provenance using GitHub's OIDC identity. Before the
-first publish, configure npm trusted publishing for `LinkeD365/ViewStudio`,
+The workflow queues that PR for GitHub auto-merge; approval remains manual, and
+GitHub merges it once the required approval and **Build and test** check pass.
+Enable auto-merge in the repository settings and retain the `main` branch rules
+above. Merging the PR creates a version tag; the release workflow builds the tag
+and publishes it to npm with provenance using GitHub's OIDC identity. Before
+the first publish, configure npm trusted publishing for `LinkeD365/ViewStudio`,
 workflow `.github/workflows/release.yml`, and the GitHub `npm` environment.
