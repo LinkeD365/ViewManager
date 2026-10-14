@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
       issues: write
       pull-requests: write
@@ -42,7 +43,26 @@ jobs:
             echo "Release Please returned an invalid pull request number." >&2
             exit 1
           fi
-          gh pr merge "$pr_number" --auto --merge
+          gh pr merge "$pr_number" --repo "$GITHUB_REPOSITORY" --auto --merge
+
+          for attempt in {1..32}; do
+            pr_status="$(gh pr view "$pr_number" --repo "$GITHUB_REPOSITORY" \
+              --json state,mergedAt \
+              --jq 'if .mergedAt != null then "merged"
+                elif .state == "CLOSED" then "closed"
+                else "open" end')"
+            if [[ "$pr_status" == "merged" ]]; then
+              gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main
+              exit 0
+            fi
+            if [[ "$pr_status" == "closed" ]]; then
+              echo "Release pull request was closed without merging." >&2
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "Timed out waiting for the release pull request to merge." >&2
+          exit 1
 
   publish:
     name: Publish to npm
