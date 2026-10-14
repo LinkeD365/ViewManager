@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/LinkeD365/ViewStudio/compare/0.2.0...0.3.0) (2026-10-14)
+
+
+### Features
+
+* License ([5e72c06](https://github.com/LinkeD365/ViewStudio/commit/5e72c0647ad0ecb299f9e2b4ac0e10cdd350e96a))
+
 ## [0.2.0](https://github.com/LinkeD365/ViewStudio/compare/0.1.0...0.2.0) (2026-10-14)
 
 

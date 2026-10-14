@@ -1,6 +1,6 @@
 {
   "name": "@linked365/pptb-viewstudio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "displayName": "View Studio",
   "description": "A Power Platform ToolBox tool that allows users to manage and copy personal and system views in Dataverse.",
   "icon": "Linked365Logo.svg",
