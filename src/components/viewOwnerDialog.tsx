@@ -65,11 +65,11 @@ export const ViewOwnerDialog = ({ views, targetEnvironment, remainingCount, lock
               disabled={!selectedOwner || isSaving}
               onClick={() => {
                 if (!selectedOwner) return;
-                if (!confirming && !error) setConfirming(true);
+                if (!confirming) setConfirming(true);
                 else void onSave(selectedOwner.id);
               }}
             >
-              {error ? "Retry remaining views" : confirming ? "Confirm owner changes" : "Review changes"}
+              {error && confirming ? "Retry remaining views" : confirming ? "Confirm owner changes" : "Review changes"}
             </Button>
             <Button disabled={isSaving} onClick={() => confirming && !lockedOwnerId ? setConfirming(false) : onCancel()}>
               {confirming && !lockedOwnerId ? "Back" : remainingCount < views.length ? "Close" : "Cancel"}

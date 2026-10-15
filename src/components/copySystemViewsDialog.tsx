@@ -104,11 +104,11 @@ export const CopySystemViewsDialog = observer(({
               disabled={!selected || isLoadingSolutions || !!solutionsError || isCopying}
               onClick={() => {
                 if (!selected) return;
-                if (!confirming && !error) setConfirming(true);
+                if (!confirming) setConfirming(true);
                 else void onCopy(selected.uniqueName);
               }}
             >
-              {error ? "Retry remaining copies" : confirming ? "Confirm and copy views" : "Review copy"}
+              {error && confirming ? "Retry remaining copies" : confirming ? "Confirm and copy views" : "Review copy"}
             </Button>
             <Button
               disabled={isCopying}

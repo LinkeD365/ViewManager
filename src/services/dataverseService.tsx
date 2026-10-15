@@ -70,8 +70,18 @@ export class dvService implements ViewDataService {
       if (records.length > MAX_FETCH_RECORDS) {
         throw new Error(`Dataverse returned more than ${MAX_FETCH_RECORDS} records. Narrow the filters and retry.`);
       }
-      cookie = result["@Microsoft.Dynamics.CRM.fetchxmlpagingcookie"];
-      if (!cookie) return records;
+      const responseCookie = result["@Microsoft.Dynamics.CRM.fetchxmlpagingcookie"];
+      if (!responseCookie) {
+        const hasMoreRecords = (result as unknown as Record<string, unknown>)["@Microsoft.Dynamics.CRM.morerecords"] === true;
+        if (hasMoreRecords) {
+          throw new Error("Dataverse reported more records without a paging cookie; the complete result could not be loaded.");
+        }
+        return records;
+      }
+      const cookieEnvelope = responseCookie.match(/pagingcookie="([^"]*)"/);
+      cookie = cookieEnvelope
+        ? decodeURIComponent(decodeURIComponent(cookieEnvelope[1]))
+        : responseCookie;
       if (page >= MAX_FETCH_PAGES) {
         throw new Error(`The query exceeded the ${MAX_FETCH_PAGES}-page limit (${MAX_FETCH_RECORDS} records). Narrow the filters and retry.`);
       }

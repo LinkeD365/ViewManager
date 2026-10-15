@@ -244,6 +244,52 @@ test("system view listing follows paging cookies and escapes the cookie in Fetch
   assert.match(queries[1], /last=&quot;a&amp;amp;b&quot;/);
 });
 
+test("system view listing unwraps double-encoded paging cookies", async () => {
+  const queries = [];
+  const innerCookie = '<cookie page="2"><savedqueryid last="a&amp;b" /></cookie>';
+  const service = new dvService({
+    connection: null,
+    onLog: () => {},
+    dvApi: {
+      getAllEntitiesMetadata: async () => ({ value: [{ LogicalName: "account", ObjectTypeCode: 1 }] }),
+      fetchXmlQuery: async (query) => {
+        queries.push(query);
+        return queries.length === 1
+          ? {
+            value: [{ savedqueryid: systemView.id, name: "First page" }],
+            "@Microsoft.Dynamics.CRM.fetchxmlpagingcookie":
+              `<cookie page="1" pagingcookie="${encodeURIComponent(encodeURIComponent(innerCookie))}" istracking="False" />`,
+          }
+          : { value: [{ savedqueryid: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", name: "Second page" }] };
+      },
+    },
+  });
+  const results = await service.getSystemViews("account");
+  assert.deepEqual(results.map(({ name }) => name), ["First page", "Second page"]);
+  assert.match(queries[1], /paging-cookie="&lt;cookie page=&quot;2&quot;&gt;/);
+  assert.match(queries[1], /last=&quot;a&amp;amp;b&quot;/);
+});
+
+test("system view listing rejects more records when Dataverse omits the paging cookie", async () => {
+  let calls = 0;
+  const service = new dvService({
+    connection: null,
+    onLog: () => {},
+    dvApi: {
+      getAllEntitiesMetadata: async () => ({ value: [{ LogicalName: "account", ObjectTypeCode: 1 }] }),
+      fetchXmlQuery: async () => {
+        calls++;
+        return {
+          value: [{ savedqueryid: systemView.id, name: "First page" }],
+          "@Microsoft.Dynamics.CRM.morerecords": true,
+        };
+      },
+    },
+  });
+  await assert.rejects(service.getSystemViews("account"), /more records without a paging cookie/);
+  assert.equal(calls, 1);
+});
+
 test("system view listing stops at the page bound and reports incomplete results", async () => {
   let calls = 0;
   const service = new dvService({
