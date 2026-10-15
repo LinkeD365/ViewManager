@@ -1,6 +1,6 @@
 {
   "name": "@linked365/pptb-view-manager",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "displayName": "View Manager",
   "description": "A Power Platform ToolBox tool that allows users to manage and copy personal and system views in Dataverse.",
   "icon": "viewManagerLogo.svg",
