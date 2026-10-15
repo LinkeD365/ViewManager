@@ -2,9 +2,10 @@ import React, { useState } from "react";
 import { observer } from "mobx-react";
 import { Combobox, makeStyles, Option, tokens, Toolbar, ToolbarButton, Tooltip } from "@fluentui/react-components";
 import {
-  ArrowClockwise24Regular, Copy24Regular, CopyArrowRight24Regular, PersonAdd24Regular, PersonSwap24Regular,
+  ArrowClockwise24Regular, ArrowDownload24Regular, Copy24Regular, CopyArrowRight24Regular, PersonAdd24Regular, PersonSwap24Regular,
 } from "@fluentui/react-icons";
-import type { ViewStudioHeaderProps } from "../model/viewModel";
+import type { ViewManagerHeaderProps } from "../model/viewModel";
+import { MAX_BULK_VIEW_COUNT } from "../model/operationLimits";
 
 const useStyles = makeStyles({
   header: {
@@ -21,13 +22,14 @@ const useStyles = makeStyles({
   },
 });
 
-export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.JSX.Element => {
+export const ViewManagerHeader = observer((props: ViewManagerHeaderProps): React.JSX.Element => {
   const {
     activeUsers, selectedOwnerId, tables, selectedTableLogicalName, tableDisabled,
     ownerDisabled, refreshDisabled, onOwnerChange, onTableChange, onRefresh,
     changeOwnerDisabled, selectedViewCount, onChangeOwner,
     addUsersDisabled, onAddUsers, copyViewsDisabled, onCopyViews,
     copyToEnvironmentDisabled, onCopyViewsToEnvironment,
+    exportBackupDisabled, onExportBackup,
   } = props;
   const styles = useStyles();
   const [ownerSearch, setOwnerSearch] = useState("");
@@ -98,6 +100,14 @@ export const ViewStudioHeader = observer((props: ViewStudioHeaderProps): React.J
         )}
       </Combobox>
       <Toolbar className={styles.actions} aria-label="Personal views actions">
+        <Tooltip content={`Export selected views backup (${selectedViewCount}; maximum ${MAX_BULK_VIEW_COUNT})`} relationship="label">
+          <ToolbarButton
+            aria-label={`Export selected views backup (${selectedViewCount}; maximum ${MAX_BULK_VIEW_COUNT})`}
+            icon={<ArrowDownload24Regular />}
+            disabled={exportBackupDisabled}
+            onClick={() => void onExportBackup()}
+          />
+        </Tooltip>
         <Tooltip content={`Copy selected views to another environment (${selectedViewCount})`} relationship="label">
           <ToolbarButton
             aria-label={`Copy selected views to another environment (${selectedViewCount})`}

@@ -4,7 +4,7 @@ import { FluentProvider, webLightTheme, webDarkTheme, makeStyles, tokens } from 
 import { useConnection, useEventLog, useToolboxEvents } from "./hooks/useToolboxAPI";
 import { dvService } from "./services/dataverseService";
 import { ViewModel } from "./model/viewModel";
-import { ViewStudio } from "./components/viewStudio";
+import { ViewManager } from "./components/viewManager";
 
 const useStyles = makeStyles({
   root: {
@@ -108,7 +108,7 @@ function App() {
       document.body.setAttribute("data-ag-theme-mode", currentTheme);
       setTheme(currentTheme);
     })();
-    addLog("ViewStudio initialized", "success");
+    addLog("View Manager initialized", "success");
   }, [addLog]);
 
   // Get theme from Toolbox API
@@ -130,11 +130,19 @@ function App() {
       dvApi: window.dataverseAPI,
       onLog: addLog,
       connectionTarget: slot,
+      validateConnection: async (expected, target) => {
+        if (target === undefined) return false;
+        const current = await window.toolboxAPI.connections.getConnection(target);
+        const normalizeUrl = (url: string) => url.replace(/\/+$/, "").toLocaleLowerCase();
+        return current !== null
+          && current.id === expected.id
+          && normalizeUrl(current.url) === normalizeUrl(expected.url);
+      },
     }) : null,
   ), [connections, addLog]);
   const notifyError = useCallback((message: string) => {
     void window.toolboxAPI.utils.showNotification({
-      title: "ViewStudio error",
+      title: "View Manager error",
       body: message,
       type: "error",
     });
@@ -142,7 +150,7 @@ function App() {
 
   const notifySuccess = useCallback((message: string) => {
     void window.toolboxAPI.utils.showNotification({
-      title: "ViewStudio",
+      title: "View Manager",
       body: message,
       type: "success",
     }).catch((error: unknown) => {
@@ -152,7 +160,7 @@ function App() {
 
   return (
     <FluentProvider theme={theme === "dark" ? webDarkTheme : webLightTheme} className={styles.root} applyStylesToPortals={false}>
-      <ViewStudio
+      <ViewManager
         connections={connections}
         connectionServices={connectionServices}
         vm={vm}

@@ -8,6 +8,7 @@ const targets = [1, 3].map((slot) => ({
   slot,
   name: `Environment ${slot + 1}`,
   environment: `org${slot + 1}.crm.dynamics.com`,
+  url: `https://org${slot + 1}.crm.dynamics.com`,
 }));
 
 test("cross-environment copy supports no more than six destinations plus the primary", () => {
@@ -16,6 +17,7 @@ test("cross-environment copy supports no more than six destinations plus the pri
     slot: index + 1,
     name: `Environment ${index + 2}`,
     environment: `org${index + 2}.crm.dynamics.com`,
+    url: `https://org${index + 2}.crm.dynamics.com`,
   }));
   operation.beginPersonal([view], sixDestinations);
   operation.cancel();
@@ -24,9 +26,31 @@ test("cross-environment copy supports no more than six destinations plus the pri
       slot: 7,
       name: "Environment 8",
       environment: "org8.crm.dynamics.com",
+      url: "https://org8.crm.dynamics.com",
     }]),
     /up to seven environments/,
   );
+});
+
+test("cross-environment copy rejects more than 500 copies before loading or writing", async () => {
+  const operation = new ViewModel().crossEnvironmentCopy;
+  const sources = Array.from({ length: 100 }, (_, index) => ({ ...view, id: `source-${index}` }));
+  const destinations = Array.from({ length: 6 }, (_, index) => ({
+    slot: index + 1,
+    name: `Environment ${index + 2}`,
+    environment: "Production",
+    url: `https://environment-${index + 2}.crm.dynamics.com`,
+  }));
+  operation.beginPersonal(sources, destinations);
+  let serviceCalls = 0;
+  const services = new Map(destinations.map(({ slot }) => [slot, {
+    getActiveUsers: async () => { serviceCalls++; return [newUser]; },
+  }]));
+  await assert.rejects(operation.selectTargets(destinations.map(({ slot }) => slot), services), /500-copy limit/);
+  assert.equal(serviceCalls, 0);
+  assert.deepEqual(operation.selectedTargetSlots, []);
+  assert.throws(() => operation.beginPersonal([...sources, { ...view, id: "source-101" }], destinations),
+    /no more than 100 views/);
 });
 
 test("personal views copy to selected destinations with destination-specific owners", async () => {

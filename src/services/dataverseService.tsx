@@ -1,5 +1,6 @@
 import type { ActiveUser, dvServiceProps, PersonalView, SystemView, SystemViewDefinition, UnmanagedSolution, ViewAccess, ViewDataService, ViewTable } from "../model/viewModel";
 import { accessRights, isEditableAccessMask } from "../model/viewModel";
+import { FETCH_PAGE_SIZE, MAX_FETCH_PAGES, MAX_FETCH_RECORDS } from "../model/operationLimits";
 
 const optionalViewDefinitionFields = [
   "description", "columnsetxml", "layoutjson", "conditionalformatting", "advancedgroupby",
@@ -10,6 +11,7 @@ export class dvService implements ViewDataService {
   dvApi: DataverseAPI.API;
   onLog: (message: string, type?: "info" | "success" | "warning" | "error") => void;
   connectionTarget: ToolBoxAPI.ConnectionTarget | undefined;
+  validateConnection: NonNullable<dvServiceProps["validateConnection"]> | undefined;
   batchSize = 2;
   private entityMetadata: Promise<Map<string, DataverseAPI.EntityMetadata>> | null = null;
   constructor(props: dvServiceProps) {
@@ -17,6 +19,7 @@ export class dvService implements ViewDataService {
     this.dvApi = props.dvApi;
     this.onLog = props.onLog;
     this.connectionTarget = props.connectionTarget;
+    this.validateConnection = props.validateConnection;
   }
 
   private fetchXmlQuery(fetchXml: string): ReturnType<DataverseAPI.API["fetchXmlQuery"]> {
@@ -25,7 +28,8 @@ export class dvService implements ViewDataService {
       : this.dvApi.fetchXmlQuery(fetchXml, this.connectionTarget);
   }
 
-  private execute(request: Parameters<DataverseAPI.API["execute"]>[0]): ReturnType<DataverseAPI.API["execute"]> {
+  private async execute(request: Parameters<DataverseAPI.API["execute"]>[0]): ReturnType<DataverseAPI.API["execute"]> {
+    await this.assertCurrentConnection();
     return this.connectionTarget === undefined
       ? this.dvApi.execute(request)
       : this.dvApi.execute(request, this.connectionTarget);
@@ -37,10 +41,46 @@ export class dvService implements ViewDataService {
       : this.dvApi.retrieve(entityName, id, columns, this.connectionTarget);
   }
 
-  private create(entityName: string, record: Record<string, unknown>): ReturnType<DataverseAPI.API["create"]> {
+  private async create(entityName: string, record: Record<string, unknown>): ReturnType<DataverseAPI.API["create"]> {
+    await this.assertCurrentConnection();
     return this.connectionTarget === undefined
       ? this.dvApi.create(entityName, record)
       : this.dvApi.create(entityName, record, this.connectionTarget);
+  }
+
+  async assertCurrentConnection(): Promise<void> {
+    if (!this.validateConnection) return;
+    if (!this.connection || !(await this.validateConnection(this.connection, this.connectionTarget))) {
+      throw new Error("The selected Dataverse environment changed. Reopen this action and review its target before writing.");
+    }
+  }
+
+  private async fetchAllPages(fetchXml: string): Promise<Record<string, unknown>[]> {
+    const records: Record<string, unknown>[] = [];
+    const seenCookies = new Set<string>();
+    let page = 1;
+    let cookie: string | undefined;
+    while (true) {
+      const pagingAttributes = ` count="${FETCH_PAGE_SIZE}" page="${page}"${cookie
+        ? ` paging-cookie="${cookie.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}"`
+        : ""}`;
+      const pageXml = fetchXml.replace("<fetch", `<fetch${pagingAttributes}`);
+      const result = await this.fetchXmlQuery(pageXml);
+      records.push(...result.value);
+      if (records.length > MAX_FETCH_RECORDS) {
+        throw new Error(`Dataverse returned more than ${MAX_FETCH_RECORDS} records. Narrow the filters and retry.`);
+      }
+      cookie = result["@Microsoft.Dynamics.CRM.fetchxmlpagingcookie"];
+      if (!cookie) return records;
+      if (page >= MAX_FETCH_PAGES) {
+        throw new Error(`The query exceeded the ${MAX_FETCH_PAGES}-page limit (${MAX_FETCH_RECORDS} records). Narrow the filters and retry.`);
+      }
+      if (seenCookies.has(cookie)) {
+        throw new Error("Dataverse repeated a paging cookie; the complete result could not be loaded.");
+      }
+      seenCookies.add(cookie);
+      page++;
+    }
   }
 
   private getAllEntitiesMetadata(properties: string[]): ReturnType<DataverseAPI.API["getAllEntitiesMetadata"]> {
@@ -67,7 +107,7 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     const [result, currentUser] = await Promise.all([
-      this.callDataverse("fetchXmlQuery (active users)", () => this.fetchXmlQuery(fetchXml), fetchXml),
+      this.callDataverse("fetchXmlQuery (active users)", () => this.fetchAllPages(fetchXml)),
       this.callDataverse("execute (WhoAmI)", () =>
         this.execute({ operationName: "WhoAmI", operationType: "function" })),
     ]);
@@ -76,7 +116,7 @@ export class dvService implements ViewDataService {
       throw new Error("Dataverse did not return the current user's ID.");
     }
 
-    return result.value.map((record) => {
+    return result.map((record) => {
       const id = record.systemuserid;
       const name = record.fullname;
       if (typeof id !== "string" || typeof name !== "string") {
@@ -132,10 +172,10 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     const result = await this.callDataverse(
-      "fetchXmlQuery (personal views)", () => this.fetchXmlQuery(fetchXml), fetchXml,
+      "fetchXmlQuery (personal views)", () => this.fetchAllPages(fetchXml),
     );
 
-    return result.value.map((record) => {
+    return result.map((record) => {
       const id = record.userqueryid;
       const name = record.name;
       if (typeof id !== "string" || typeof name !== "string") {
@@ -183,8 +223,8 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     return this.callDataverse("fetchXmlQuery (system views)", async () => {
-      const result = await this.fetchXmlQuery(fetchXml);
-      return result.value.map((record) => {
+      const result = await this.fetchAllPages(fetchXml);
+      return result.map((record) => {
         if (typeof record.savedqueryid !== "string" || typeof record.name !== "string") {
           throw new Error("Dataverse returned a system view without an ID or name.");
         }
@@ -220,9 +260,9 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     return this.callDataverse("fetchXmlQuery (unmanaged solutions)", async () => {
-      const result = await this.fetchXmlQuery(fetchXml);
+      const result = await this.fetchAllPages(fetchXml);
       const solutions: UnmanagedSolution[] = [];
-      for (const record of result.value) {
+      for (const record of result) {
         if (typeof record.ismanaged !== "boolean" || typeof record.isvisible !== "boolean") {
           throw new Error("Dataverse returned a solution without valid managed/visible flags.");
         }
@@ -423,7 +463,7 @@ export class dvService implements ViewDataService {
     }
 
     const fetchXml = [
-      '<fetch version="1.0" mapping="logical" distinct="true" latematerialize="true" top="51">',
+      '<fetch version="1.0" mapping="logical" distinct="true" latematerialize="true">',
       '  <entity name="principalobjectaccess">',
       '    <attribute name="accessrightsmask" />',
       '    <attribute name="principaltypecode" />',
@@ -452,9 +492,8 @@ export class dvService implements ViewDataService {
       '</fetch>',
     ].join("");
     const result = await this.callDataverse(`fetchXmlQuery (view access: ${viewId})`, () =>
-      this.fetchXmlQuery(fetchXml), fetchXml);
-    return result.value.map((record) => {
-      console.log(record);
+      this.fetchAllPages(fetchXml));
+    return result.map((record) => {
       const id = record.principalid;
       const principalType = record.principaltypecode;
       const isUser = principalType === "systemuser" || principalType === 8;
@@ -531,7 +570,6 @@ export class dvService implements ViewDataService {
     mask: number,
     operationName: "GrantAccess" | "ModifyAccess" | "RevokeAccess",
   ): Promise<void> {
-    console.log(`Writing view access: ${operationName} (view: ${viewId}, ${principal.principalType}: ${principal.id})`);
     await this.callDataverse(`${operationName} (view: ${viewId}, ${principal.principalType}: ${principal.id})`, async () => {
       const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!guid.test(viewId) || !guid.test(principal.id)) throw new Error("The view or principal ID is invalid.");
@@ -560,7 +598,7 @@ export class dvService implements ViewDataService {
     });
   }
 
-  private async callDataverse<T>(operation: string, request: () => Promise<T>, fetchXml?: string): Promise<T> {
+  private async callDataverse<T>(operation: string, request: () => Promise<T>, _fetchXml?: string): Promise<T> {
     try {
       return await request();
     } catch (error) {
@@ -570,7 +608,7 @@ export class dvService implements ViewDataService {
           && typeof error.message === "string"
           ? error.message
           : String(error);
-      this.onLog(`Dataverse ${operation} failed: ${message}${fetchXml ? `\nFetchXML: ${fetchXml}` : ""}`, "error");
+      this.onLog(`Dataverse ${operation} failed: ${message}`, "error");
       throw error;
     }
   }

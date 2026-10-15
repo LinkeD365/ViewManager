@@ -1,5 +1,6 @@
 import { makeAutoObservable, runInAction } from "mobx";
 import type { ActiveUser, PersonalViewCopy, SystemView, ViewDataService } from "./viewModel";
+import { MAX_BULK_VIEW_COUNT } from "./operationLimits";
 
 export class CopySystemViewsToPersonalModel {
   copies: PersonalViewCopy[] = [];
@@ -20,6 +21,9 @@ export class CopySystemViewsToPersonalModel {
   begin(sources: SystemView[]): void {
     if (this.isOpen || this.isCopying) throw new Error("Finish the current copy operation first.");
     if (sources.length === 0) throw new Error("Select at least one system view to copy.");
+    if (sources.length > MAX_BULK_VIEW_COUNT) {
+      throw new Error(`Copy no more than ${MAX_BULK_VIEW_COUNT} views per operation.`);
+    }
     this.reset();
     this.copies = sources.map((source) => ({
       source: { ...source },

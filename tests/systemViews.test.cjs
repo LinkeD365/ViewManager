@@ -207,6 +207,7 @@ test("system view query and response errors retain diagnostic logs", async () =>
       fetchXmlQuery: async () => ({ value: rows }),
     },
   });
+
   await assert.rejects(service.getSystemViews("account"), /without an ID or name/);
   rows = [];
   assert.deepEqual(await service.getSystemViews("account"), []);
@@ -214,5 +215,51 @@ test("system view query and response errors retain diagnostic logs", async () =>
   await assert.rejects(service.getSystemViews("account"), /Saved-query read denied/);
   assert.equal(logs.length, 2);
   assert.ok(logs.every(([message, level]) =>
-    level === "error" && message.includes("system views") && message.includes('entity name="savedquery"')));
+    level === "error" && message.includes("system views") && !message.includes('entity name="savedquery"')));
+});
+
+test("system view listing follows paging cookies and escapes the cookie in FetchXML", async () => {
+  const queries = [];
+  const service = new dvService({
+    connection: null,
+    onLog: () => {},
+    dvApi: {
+      getAllEntitiesMetadata: async () => ({ value: [{ LogicalName: "account", ObjectTypeCode: 1 }] }),
+      fetchXmlQuery: async (query) => {
+        queries.push(query);
+        return queries.length === 1
+          ? {
+            value: [{ savedqueryid: systemView.id, name: "First page" }],
+            "@Microsoft.Dynamics.CRM.fetchxmlpagingcookie": '<cookie page="1"><savedqueryid last="a&amp;b" /></cookie>',
+          }
+          : { value: [{ savedqueryid: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", name: "Second page" }] };
+      },
+    },
+  });
+  const results = await service.getSystemViews("account");
+  assert.deepEqual(results.map(({ name }) => name), ["First page", "Second page"]);
+  assert.match(queries[0], /count="5000" page="1"/);
+  assert.match(queries[1], /count="5000" page="2"/);
+  assert.match(queries[1], /paging-cookie="&lt;cookie page=&quot;1&quot;&gt;/);
+  assert.match(queries[1], /last=&quot;a&amp;amp;b&quot;/);
+});
+
+test("system view listing stops at the page bound and reports incomplete results", async () => {
+  let calls = 0;
+  const service = new dvService({
+    connection: null,
+    onLog: () => {},
+    dvApi: {
+      getAllEntitiesMetadata: async () => ({ value: [{ LogicalName: "account", ObjectTypeCode: 1 }] }),
+      fetchXmlQuery: async () => {
+        calls++;
+        return {
+          value: [],
+          "@Microsoft.Dynamics.CRM.fetchxmlpagingcookie": `<cookie page="${calls}" />`,
+        };
+      },
+    },
+  });
+  await assert.rejects(service.getSystemViews("account"), /exceeded the 20-page limit \(100000 records\)/);
+  assert.equal(calls, 20);
 });

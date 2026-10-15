@@ -1,20 +1,48 @@
-# ViewStudio
+# View Manager
 
-ViewStudio is a Power Platform ToolBox tool for browsing Dataverse personal and
+View Manager is a Power Platform ToolBox tool for browsing Dataverse personal and
 system views, copying personal views into system views, and managing the users
 and teams personal views are shared with.
+
+![View Manager showing personal views and sharing permissions](./public/view-manager-screenshot.png)
+
+Personal and environment-specific values are obscured in this screenshot.
 
 ## Getting started
 
 1. Open Power Platform ToolBox and connect to your Dataverse environment.
-2. Open ViewStudio inside ToolBox.
+2. Open View Manager inside ToolBox.
 3. On the **Personal views** tab, use the owner filter to find personal views.
 4. Select a personal view to see its sharing permissions, or switch to
    **System views** and select a table to browse its system views.
 
-ViewStudio requires the ToolBox host and does not run as a standalone website.
+View Manager requires the ToolBox host and does not run as a standalone website.
 The connected account must have permission to read the relevant views and
 sharing records, and to change sharing if you want to edit access.
+Paged Dataverse queries stop at 20 pages (up to 100,000 records); narrow a query
+and retry if it exceeds that bound.
+
+## What this tool changes
+
+View Manager only changes Dataverse data after you select an explicit action
+and confirm its target and scope. It can create personal or system view copies,
+add copied system views to an unmanaged solution, reassign ownership of
+personal views, and grant, modify or revoke direct sharing permissions. It does
+not modify source view definitions when copying, publish customizations, or
+change security roles.
+
+Ownership and sharing changes can remove access or replace existing direct
+permissions. Before changing them, use **Export selected views backup** to
+download a JSON file containing the selected personal views' owners and direct
+sharing records. Keep the backup in a secure location; it contains user and
+team identifiers. Restoring a backup is not currently supported.
+
+The tool does not send telemetry or view data to an external service. Its
+Dataverse requests use the Power Platform ToolBox host APIs and the active
+connection shown in each confirmation.
+
+**AI disclosure:** View Manager is not an AI-powered tool. AI assistance was
+used in development.
 
 ## Find personal views
 
@@ -39,6 +67,8 @@ views matching the grid filters, including those on other pages.
 Use the **Refresh personal views** icon beside the owner filter to reload the
 list for the current owner or table. Changing owner, changing table or refreshing
 clears the selected view and access panel. Switching owners clears the table selection.
+Use **Export selected views backup** to download ownership and sharing records
+for selected personal views before making changes.
 
 ## Browse system views
 
@@ -60,10 +90,12 @@ by the connected account's permissions.
 
 1. On **System views**, select one or more views using the row checkboxes.
 2. Click **Copy selected system views to personal views** in the toolbar.
-3. Choose an active user as the new owner, then click **Copy views**. The
-   original system views are unchanged.
+3. Choose an active user as the new owner, review the views and target
+   environment, then click **Confirm and copy views**. The original system
+   views are unchanged.
 
-Each personal copy keeps its system view's name, description, filters and layout.
+Copy up to 100 views per operation. Each personal copy keeps its system view's
+name, description, filters and layout.
 Copies are separate views, so later changes to either view do not affect the
 other. If a create request fails, **Retry remaining copies** uses the same copy
 IDs and owner, checking whether Dataverse already created each view before
@@ -73,7 +105,7 @@ when it is visible.
 
 ## Copy views across environments
 
-ViewStudio can connect to up to seven Dataverse environments. The primary
+View Manager can connect to up to seven Dataverse environments. The primary
 environment is always the source; up to six additional configured connections
 are available as destinations. Select one or more destination environments in
 the cross-environment copy dialog.
@@ -88,8 +120,12 @@ listed below. Use **Copy system views to other environments** on the System
 views tab to copy selected system views as system views. Its cards likewise
 list the views and keep the unmanaged-solution picker at the top (disabled
 until the environment is checked, and replaced by a loading indicator while
-solutions load). Click **Copy views** to start.
+solutions load). Review the selected views and destination environment, owner
+or solution, then click **Confirm and copy views**.
 
+Owner changes, backups and copy operations are limited to 100 selected views;
+cross-environment copies are additionally limited to 500 total destination
+copies.
 Copies run sequentially; a green checkmark appears beside each completed view
 in its destination card. If a copy fails, retry the remaining work in the same
 dialog; completed copies are skipped and the selected destinations,
@@ -107,7 +143,8 @@ privileges when copying system views.
 3. Search for and select an **unmanaged solution**. The picker shows its display
    name, unique name and version. Managed, hidden and internal Active/Default
    solutions are excluded.
-4. Review the public-view warning and click **Copy views**.
+4. Review the public-view warning, selected views, solution and target
+   environment, then click **Confirm and copy views**.
 
 Each selected personal view becomes a new, non-default public system view for
 the same table, with its original name, description, filters and layout.
@@ -121,7 +158,8 @@ create system views and add components to the selected solution. This action doe
 not publish customizations automatically: review and publish through the solution
 as needed, and include the views in the appropriate model-driven apps.
 
-Copies run one at a time, with progress shown in the form. On failure, **Retry
+Copy up to 100 views per operation. Copies run one at a time, with progress
+shown in the form. On failure, **Retry
 remaining copies** keeps the same solution and copy IDs. Completed copies are not
 recreated. If a view was created but could not be added to the solution, its ID is
 shown and retry attempts the solution addition again. Stable IDs also prevent a
@@ -142,7 +180,10 @@ completed batch or after closing a batch that was attempted.
    stays disabled when no views are selected.
 3. Search for and select one new owner from the active users. Users who already
    own every selected view are excluded.
-4. Click **Change owner** to confirm, or **Cancel** to leave ownership unchanged.
+4. Review the current and new owners, then click **Confirm owner changes** or
+   go back to leave ownership unchanged.
+
+Reassign up to 100 views per operation.
 
 The connected account needs permission to assign the view. Changing ownership
 may remove your access to it. Assigning to teams is not supported by this picker.
@@ -179,7 +220,8 @@ teams returned for that view, together with readable access rights such as
    the picker.
 3. Choose the permissions to apply to every selected user on every selected view.
    **Read** is selected by default; at least one permission is required.
-4. Review the replacement warning and click **Apply access**.
+4. Review the replacement warning and affected users, views and permissions,
+   then click **Confirm and apply access**.
 
 **This replaces each selected user's existing direct sharing permissions with
 exactly the selected permissions. Existing permissions not shown in the picker
@@ -190,7 +232,8 @@ security roles or teams is unaffected; unselected users and views are unchanged.
 The form shows this warning before you apply any changes. The connected account
 must have the required sharing permissions.
 
-Changes run one user/view pair at a time. If an operation fails, the form shows
+The operation is limited to 500 user/view changes. Changes run one user/view
+pair at a time. If an operation fails, the form shows
 the affected user and view and how many changes completed. **Retry remaining
 changes** keeps the same users and permissions and does not repeat completed
 changes. **Close** after a partial failure does not undo changes already saved.
@@ -271,6 +314,19 @@ sharing records.
 - **Access denied:** check that the connected account has the required
   permissions. Editing the filter does not change which account makes requests.
 - **Controls disabled:** finish saving or discard pending permission changes.
+
+## Testing
+
+Human acceptance testing was performed by LinkeD365 on 15/1/2026 using
+View Manager 0.3.0 in Power Platform ToolBox 1.2.7 against a
+real, non-production Dataverse environment.
+
+- Light and dark themes: ✔️
+- View listing and backup export: ✔️
+- Ownership and sharing changes: ✔️
+- Personal/system and cross-environment copies: ✔️
+- Permission, connection-change and retry scenarios: ✔️
+- Issues or limitations: none
 
 ## Technical documentation
 

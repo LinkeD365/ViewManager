@@ -6,6 +6,7 @@ import {
 } from "@fluentui/react-components";
 import { CheckmarkSquare20Filled } from "@fluentui/react-icons";
 import type { CrossEnvironmentCopyDialogProps } from "../model/viewModel";
+import { MAX_BULK_VIEW_COUNT, MAX_CROSS_ENVIRONMENT_COPIES } from "../model/operationLimits";
 
 const useStyles = makeStyles({
   surface: {
@@ -83,12 +84,13 @@ const useStyles = makeStyles({
 
 export const CrossEnvironmentCopyDialog = observer((props: CrossEnvironmentCopyDialogProps): React.JSX.Element => {
   const {
-    kind, sourceCount, sourceViews, targets, selectedTargetSlots, isTargetsLocked, personalCopies, systemCopies,
+    kind, sourceEnvironment, sourceCount, sourceViews, targets, selectedTargetSlots, isTargetsLocked, personalCopies, systemCopies,
     destinations, isLoadingOptions, optionsError, isCopying, error, onTargetsChange, onOwnerChange,
     onSolutionChange, onRetryOptions, onCopy, onCancel,
   } = props;
   const styles = useStyles();
   const [searchBySlot, setSearchBySlot] = useState<Record<number, string>>({});
+  const [confirming, setConfirming] = useState(false);
   const completed = kind === "personal"
     ? personalCopies.filter((copy) => copy.completed).length
     : systemCopies.filter((copy) => copy.added).length;
@@ -110,7 +112,10 @@ export const CrossEnvironmentCopyDialog = observer((props: CrossEnvironmentCopyD
             <span className={styles.progress} aria-live="polite">{completed} / {total} complete</span>
           </DialogTitle>
           <DialogContent className={styles.content}>
-            <p>Copy from the primary environment. Choose up to six destination environments and configure each card.</p>
+            <p>
+              Source environment: {sourceEnvironment}. Choose up to six destination environments and configure each card.
+              Operations allow up to {MAX_BULK_VIEW_COUNT} views and {MAX_CROSS_ENVIRONMENT_COPIES} total copies.
+            </p>
             <div className={styles.destinations}>
               {targets.map((target) => {
               const selected = selectedTargetSlots.includes(target.slot);
@@ -120,9 +125,9 @@ export const CrossEnvironmentCopyDialog = observer((props: CrossEnvironmentCopyD
               return (
                 <section className={styles.destination} key={target.slot} aria-label={`${target.name} destination`}>
                   <Checkbox
-                    label={`${target.name} (${target.environment})`}
+                    label={`${target.name} (${target.environment}) — ${target.url}`}
                     checked={selected}
-                    disabled={isCopying || isTargetsLocked}
+                    disabled={isCopying || isTargetsLocked || confirming}
                     onChange={(_event, data) => {
                       const slots = selectedTargetSlots.filter((slot) => slot !== target.slot);
                       if (data.checked === true) slots.push(target.slot);
@@ -151,7 +156,7 @@ export const CrossEnvironmentCopyDialog = observer((props: CrossEnvironmentCopyD
                               || destination.users.find((user) => user.id === destination.selectedOwnerId)?.name || ""
                             : ""}
                           selectedOptions={destination?.selectedOwnerId ? [destination.selectedOwnerId] : []}
-                          disabled={!selected || !destination || isCopying || destination.lockedOwnerId !== null
+                          disabled={!selected || !destination || isCopying || confirming || destination.lockedOwnerId !== null
                             || destination.isLoading || destination.error !== null}
                           onChange={(event) => {
                             setSearchBySlot((current) => ({ ...current, [target.slot]: event.target.value }));
@@ -182,7 +187,7 @@ export const CrossEnvironmentCopyDialog = observer((props: CrossEnvironmentCopyD
                               || destination.solutions.find((item) => item.uniqueName === destination.selectedSolution)?.name || ""
                             : ""}
                           selectedOptions={destination?.selectedSolution ? [destination.selectedSolution] : []}
-                          disabled={!selected || !destination || isCopying || destination.lockedSolution !== null
+                          disabled={!selected || !destination || isCopying || confirming || destination.lockedSolution !== null
                             || destination.error !== null}
                           onChange={(event) => {
                             setSearchBySlot((current) => ({ ...current, [target.slot]: event.target.value }));
@@ -227,6 +232,23 @@ export const CrossEnvironmentCopyDialog = observer((props: CrossEnvironmentCopyD
                       })}
                     </ul>
                   </div>
+                  {confirming && (
+                    <>
+                      <MessageBar intent="warning">
+                        <strong>Review before copying:</strong>{" "}
+                        {destinations.map((destination) => {
+                          const target = targets.find((entry) => entry.slot === destination.slot);
+                          const owner = destination.users.find((user) => user.id === destination.selectedOwnerId);
+                          const solution = destination.solutions.find((item) => item.uniqueName === destination.selectedSolution);
+                          return `${target?.name} (${target?.environment}) — ${target?.url} — ${kind === "personal"
+                            ? `owner: ${owner?.name}` : `solution: ${solution?.name ?? destination.selectedSolution}`}`;
+                        }).join("; ")}. {sourceCount} {kind} {sourceCount === 1 ? "view" : "views"} will be copied to each destination.
+                      </MessageBar>
+                      <MessageBar intent="warning">
+                        Closing this form will not undo views already created in any destination.
+                      </MessageBar>
+                    </>
+                  )}
                 </section>
               );
               })}
@@ -236,10 +258,22 @@ export const CrossEnvironmentCopyDialog = observer((props: CrossEnvironmentCopyD
             {isCopying && <Spinner size="tiny" label="Copying views to selected environments..." />}
           </DialogContent>
           <DialogActions>
-            <Button appearance="primary" disabled={!allReady} onClick={() => void onCopy()}>
-              {error ? "Retry remaining copies" : "Copy views"}
+            <Button
+              appearance="primary"
+              disabled={!allReady}
+              onClick={() => {
+                if (!confirming && !error) setConfirming(true);
+                else void onCopy();
+              }}
+            >
+              {error ? "Retry remaining copies" : confirming ? "Confirm and copy views" : "Review copy"}
             </Button>
-            <Button disabled={isCopying} onClick={onCancel}>{error ? "Close" : "Cancel"}</Button>
+            <Button
+              disabled={isCopying}
+              onClick={() => confirming && !isTargetsLocked ? setConfirming(false) : onCancel()}
+            >
+              {confirming && !isTargetsLocked ? "Back" : error ? "Close" : "Cancel"}
+            </Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

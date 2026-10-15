@@ -3,6 +3,7 @@ import type {
   CrossEnvironmentCopyKind, CrossEnvironmentDestination, EnvironmentTargetOption,
   PersonalEnvironmentCopy, PersonalView, SystemEnvironmentCopy, SystemView, ViewDataService,
 } from "./viewModel";
+import { MAX_BULK_VIEW_COUNT, MAX_CROSS_ENVIRONMENT_COPIES } from "./operationLimits";
 
 export class CrossEnvironmentCopyModel {
   kind: CrossEnvironmentCopyKind | null = null;
@@ -29,12 +30,18 @@ export class CrossEnvironmentCopyModel {
 
   beginPersonal(views: PersonalView[], targets: EnvironmentTargetOption[]): void {
     if (views.length === 0) throw new Error("Select at least one personal view to copy.");
+    if (views.length > MAX_BULK_VIEW_COUNT) {
+      throw new Error(`Copy no more than ${MAX_BULK_VIEW_COUNT} views per operation.`);
+    }
     this.begin("personal", targets);
     this.personalSources = views.map((view) => ({ ...view }));
   }
 
   beginSystem(views: SystemView[], targets: EnvironmentTargetOption[]): void {
     if (views.length === 0) throw new Error("Select at least one system view to copy.");
+    if (views.length > MAX_BULK_VIEW_COUNT) {
+      throw new Error(`Copy no more than ${MAX_BULK_VIEW_COUNT} views per operation.`);
+    }
     this.begin("system", targets);
     this.systemSources = views.map((view) => ({ ...view }));
   }
@@ -56,6 +63,10 @@ export class CrossEnvironmentCopyModel {
     const uniqueSlots = [...new Set(slots)];
     if (uniqueSlots.some((slot) => !this.targets.some((target) => target.slot === slot))) {
       throw new Error("Select configured destination environments.");
+    }
+    const copiesPerDestination = this.kind === "personal" ? this.personalSources.length : this.systemSources.length;
+    if (uniqueSlots.length * copiesPerDestination > MAX_CROSS_ENVIRONMENT_COPIES) {
+      throw new Error(`This operation exceeds the ${MAX_CROSS_ENVIRONMENT_COPIES}-copy limit. Select fewer destinations or views.`);
     }
     if (this.destinations.some((destination) =>
       destination.lockedOwnerId !== null || destination.lockedSolution !== null)) {

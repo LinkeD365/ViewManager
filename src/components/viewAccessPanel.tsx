@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { observer } from "mobx-react";
-import { Button, makeStyles, MessageBar, Spinner, Text, Toolbar, ToolbarButton, Tooltip, tokens } from "@fluentui/react-components";
+import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, MessageBar, Spinner, Text, Toolbar, ToolbarButton, Tooltip, tokens } from "@fluentui/react-components";
 import { Add24Regular, ArrowUndo24Regular, Delete24Regular, Save24Regular } from "@fluentui/react-icons";
 import { AllCommunityModule, themeQuartz } from "ag-grid-community";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
@@ -44,11 +44,12 @@ const useStyles = makeStyles({
 });
 
 export const ViewAccessPanel = observer((props: ViewAccessPanelProps): React.JSX.Element => {
-  const { selectedView, access, isLoading, error, hasChanges, isSaving, saveError, onChange, onRemove, onSave, onDiscard,
+  const { selectedView, targetEnvironment, access, pendingChanges, isLoading, error, hasChanges, isSaving, saveError, onChange, onRemove, onSave, onDiscard,
     availableUsers, hasNewUserRow, onAddUser, onSelectUser, onCancelUser } = props;
   const styles = useStyles();
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [showUserPicker, setShowUserPicker] = useState(false);
+  const [confirmingSave, setConfirmingSave] = useState(false);
   const editingPrincipal = access.find((entry) => `${entry.principalType}:${entry.id}` === editingKey);
   const columns = useMemo<ColDef<ViewAccessGridRow>[]>(() => [
     {
@@ -126,7 +127,7 @@ export const ViewAccessPanel = observer((props: ViewAccessPanelProps): React.JSX
               aria-label="Save access changes"
               icon={<Save24Regular />}
               disabled={!selectedView || !hasChanges || hasNewUserRow || isSaving || isLoading}
-              onClick={() => void onSave()}
+              onClick={() => setConfirmingSave(true)}
             />
           </Tooltip>
           <Tooltip content="Discard access changes" relationship="label">
@@ -148,9 +149,6 @@ export const ViewAccessPanel = observer((props: ViewAccessPanelProps): React.JSX
         <MessageBar intent="error">{error}</MessageBar>
       ) : (
         <>
-          {access.length === 51 && (
-            <MessageBar intent="warning">The query limit of 51 records was reached. More access records may exist.</MessageBar>
-          )}
           <div className={styles.grid}>
             <AgGridReact<ViewAccessGridRow>
               modules={[AllCommunityModule]}
@@ -182,6 +180,44 @@ export const ViewAccessPanel = observer((props: ViewAccessPanelProps): React.JSX
           onClose={() => setEditingKey(null)}
         />
       )}
+      <Dialog open={confirmingSave} onOpenChange={(_event, data) => { if (!data.open && !isSaving) setConfirmingSave(false); }}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Confirm access changes</DialogTitle>
+            <DialogContent>
+              <MessageBar>Target environment: {targetEnvironment}</MessageBar>
+              <p>View: {selectedView?.name}</p>
+              <ul>
+                {pendingChanges.map((change, index) => (
+                  <li key={`${change.principalType}:${change.principalName}:${index}`}>
+                    {change.action} {change.principalType.toLowerCase()} “{change.principalName}”:
+                    {" "}{change.currentRights} → {change.requestedRights}
+                  </li>
+                ))}
+              </ul>
+              {pendingChanges.some((change) => change.action === "Revoke") && (
+                <MessageBar intent="warning">Revocation removes the direct share; other access sources may still apply.</MessageBar>
+              )}
+              <MessageBar intent="warning">
+                These changes cannot be undone by closing this form. Export the selected views' backup first; View Manager does not restore backups.
+              </MessageBar>
+            </DialogContent>
+            <DialogActions>
+              <Button
+                appearance="primary"
+                disabled={isSaving || pendingChanges.length === 0}
+                onClick={() => {
+                  setConfirmingSave(false);
+                  void onSave();
+                }}
+              >
+                Confirm and save
+              </Button>
+              <Button disabled={isSaving} onClick={() => setConfirmingSave(false)}>Back</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </section>
   );
 });

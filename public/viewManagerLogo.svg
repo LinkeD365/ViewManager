@@ -1,0 +1,58 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 240 160"
+  fill="none"
+>
+  <!-- Vertical lines -->
+  <g
+    stroke="currentColor"
+    stroke-width="8"
+    stroke-linecap="round"
+  >
+    <line x1="40" y1="25" x2="40" y2="135" />
+    <line x1="60" y1="25" x2="60" y2="135" />
+    <line x1="80" y1="25" x2="80" y2="135" />
+    <line x1="100" y1="25" x2="100" y2="135" />
+    <line x1="120" y1="25" x2="120" y2="135" />
+    <line x1="140" y1="25" x2="140" y2="135" />
+    <line x1="160" y1="25" x2="160" y2="135" />
+    <line x1="180" y1="25" x2="180" y2="135" />
+    <line x1="200" y1="25" x2="200" y2="135" />
+  </g>
+
+  <!-- Eye -->
+  <path
+    d="M25 80
+       C48 45 82 35 120 35
+       C158 35 192 45 215 80
+       C192 115 158 125 120 125
+       C82 125 48 115 25 80Z"
+    fill="#b7a2c4"
+  />
+
+  <!-- Eye white -->
+  <path
+    d="M43 80
+       C64 56 89 49 120 49
+       C151 49 176 56 197 80
+       C176 104 151 111 120 111
+       C89 111 64 104 43 80Z"
+    fill="white"
+  />
+
+  <!-- Iris -->
+  <circle
+    cx="120"
+    cy="80"
+    r="25"
+    fill="#b7a2c4"
+  />
+
+  <!-- Highlight -->
+  <circle
+    cx="128"
+    cy="70"
+    r="6"
+    fill="white"
+  />
+</svg>

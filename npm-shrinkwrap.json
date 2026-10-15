@@ -1,11 +1,11 @@
 {
-  "name": "@linked365/pptb-viewstudio",
+  "name": "@linked365/pptb-view-manager",
   "version": "0.3.0",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
-      "name": "@linked365/pptb-viewstudio",
+      "name": "@linked365/pptb-view-manager",
       "version": "0.3.0",
       "license": "MIT",
       "dependencies": {

@@ -7,10 +7,11 @@ const useStyles = makeStyles({
   content: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM },
 });
 
-export const ViewOwnerDialog = ({ views, remainingCount, lockedOwnerId, users, isSaving, error, onSave, onCancel }: ViewOwnerDialogProps): React.JSX.Element => {
+export const ViewOwnerDialog = ({ views, targetEnvironment, remainingCount, lockedOwnerId, users, isSaving, error, onSave, onCancel }: ViewOwnerDialogProps): React.JSX.Element => {
   const styles = useStyles();
   const [search, setSearch] = useState("");
   const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const visibleUsers = users.filter((user) => user.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const selectedOwner = users.find((user) => user.id === (lockedOwnerId ?? ownerId));
   return (
@@ -19,9 +20,25 @@ export const ViewOwnerDialog = ({ views, remainingCount, lockedOwnerId, users, i
         <DialogBody>
           <DialogTitle>Change owner of {views.length} selected views</DialogTitle>
           <DialogContent className={styles.content}>
-            <p>Choose one owner for all selected views and confirm. You may lose access to these views after changing their owner.</p>
+            <MessageBar>Target environment: {targetEnvironment}</MessageBar>
+            <p>Reassign up to 100 views per operation.</p>
+            {confirming ? (
+              <>
+                <p>Review the ownership changes before applying them. You may lose access to these views afterward.</p>
+                <MessageBar intent="warning">
+                  Closing this form will not undo completed assignments. Export the selected views' backup first; View Manager does not restore backups.
+                </MessageBar>
+                <ul>
+                  {views.map((view) => (
+                    <li key={view.id}>{view.name}: {view.ownerName || view.ownerId} → {selectedOwner?.name}</li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p>Choose one owner for all selected views. The listed views will be reassigned together.</p>
+            )}
             <p>{views.length - remainingCount} of {views.length} views completed; {remainingCount} remaining.</p>
-            <Field label="New owner">
+            {!confirming && <Field label="New owner">
               <Combobox
                 aria-label="New view owner"
                 inlinePopup
@@ -38,15 +55,25 @@ export const ViewOwnerDialog = ({ views, remainingCount, lockedOwnerId, users, i
                 {visibleUsers.map((user) => <Option key={user.id} value={user.id}>{user.name}</Option>)}
                 {visibleUsers.length === 0 && <Option disabled>No matching users</Option>}
               </Combobox>
-            </Field>
+            </Field>}
             {error && <MessageBar intent="error">{error}</MessageBar>}
             {isSaving && <Spinner size="tiny" label="Changing owner..." />}
           </DialogContent>
           <DialogActions>
-            <Button appearance="primary" disabled={!selectedOwner || isSaving} onClick={() => { if (selectedOwner) void onSave(selectedOwner.id); }}>
-              {error ? "Retry remaining views" : "Change owner"}
+            <Button
+              appearance="primary"
+              disabled={!selectedOwner || isSaving}
+              onClick={() => {
+                if (!selectedOwner) return;
+                if (!confirming && !error) setConfirming(true);
+                else void onSave(selectedOwner.id);
+              }}
+            >
+              {error ? "Retry remaining views" : confirming ? "Confirm owner changes" : "Review changes"}
             </Button>
-            <Button disabled={isSaving} onClick={onCancel}>{remainingCount < views.length ? "Close" : "Cancel"}</Button>
+            <Button disabled={isSaving} onClick={() => confirming && !lockedOwnerId ? setConfirming(false) : onCancel()}>
+              {confirming && !lockedOwnerId ? "Back" : remainingCount < views.length ? "Close" : "Cancel"}
+            </Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

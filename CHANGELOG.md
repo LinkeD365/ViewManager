@@ -12,7 +12,7 @@
 
 ### Features
 
-* add ViewStudioHeader component for personal views management ([0b987f7](https://github.com/LinkeD365/ViewStudio/commit/0b987f7ef1516d66aa1d4d713af1bc7d40b355e0))
+* add ViewManagerHeader component for personal views management ([0b987f7](https://github.com/LinkeD365/ViewStudio/commit/0b987f7ef1516d66aa1d4d713af1bc7d40b355e0))
 * create viewModel for managing active users and personal views ([0b987f7](https://github.com/LinkeD365/ViewStudio/commit/0b987f7ef1516d66aa1d4d713af1bc7d40b355e0))
 * develop dataverseService for interacting with Dataverse API ([0b987f7](https://github.com/LinkeD365/ViewStudio/commit/0b987f7ef1516d66aa1d4d713af1bc7d40b355e0))
 * Enhance view access management with user addition and removal functionality ([586eb2d](https://github.com/LinkeD365/ViewStudio/commit/586eb2d6818b79475e91b97d3dcdcd34ac5f9c39))

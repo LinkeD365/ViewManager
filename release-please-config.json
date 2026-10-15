@@ -5,7 +5,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "pptb-viewstudio"
+      "package-name": "pptb-view-manager"
     }
   }
 }

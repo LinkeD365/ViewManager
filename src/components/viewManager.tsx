@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect } from "react";
 import { observer } from "mobx-react";
 import { makeStyles, MessageBar, Spinner, Tab, TabList, tokens, useId } from "@fluentui/react-components";
-import type { PersonalView, ViewAccess, ViewStudioProps } from "../model/viewModel";
-import { ViewStudioHeader } from "./viewStudioHeader";
+import type { PersonalView, ViewAccess, ViewManagerProps } from "../model/viewModel";
+import { ViewManagerHeader } from "./viewManagerHeader";
 import { PersonalViewsGrid } from "./personalViewsGrid";
 import { ViewAccessPanel } from "./viewAccessPanel";
 import { ViewOwnerDialog } from "./viewOwnerDialog";
@@ -11,6 +11,7 @@ import { SystemViews } from "./systemViews";
 import { CopySystemViewsDialog } from "./copySystemViewsDialog";
 import { CopySystemViewToPersonalDialog } from "./copySystemViewToPersonalDialog";
 import { CrossEnvironmentCopyDialog } from "./crossEnvironmentCopyDialog";
+import { MAX_BULK_VIEW_COUNT } from "../model/operationLimits";
 
 const useStyles = makeStyles({
   root: {
@@ -37,19 +38,23 @@ const useStyles = makeStyles({
   },
 });
 
-export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element => {
+export const ViewManager = observer((props: ViewManagerProps): React.JSX.Element => {
   const { connections, connectionServices, vm, onLog, notifyError, notifySuccess } = props;
   const connection = connections[0] ?? null;
   const dvSvc = connectionServices[0] ?? null;
+  const primaryEnvironment = connection
+    ? `${connection.name} (${connection.environment}) — ${connection.url}`
+    : "No active environment";
   const destinationTargets = connections.flatMap((target, slot) => target && slot > 0 && slot < 7
-    ? [{ slot, name: target.name, environment: target.environment }]
+    ? [{ slot, name: target.name, environment: target.environment, url: target.url }]
     : []);
   const targetServices = new Map<number, NonNullable<(typeof connectionServices)[number]>>();
   connectionServices.forEach((service, slot) => {
     if (service && slot > 0) targetServices.set(slot, service);
   });
   const styles = useStyles();
-  const tabsId = useId("view-studio-tabs");
+  const tabsId = useId("view-manager-tabs");
+  const [isExportingBackup, setIsExportingBackup] = React.useState(false);
 
   const loadViews = useCallback(async () => {
     if (!dvSvc) return;
@@ -206,6 +211,59 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
       notifyError(message);
     }
   }, [dvSvc, vm, onLog, notifyError, notifySuccess]);
+
+  const exportBackup = useCallback(async () => {
+    if (!connection || !dvSvc || vm.selectedViews.length === 0 || isExportingBackup) return;
+    const selectedViews = [...vm.selectedViews];
+    if (selectedViews.length > MAX_BULK_VIEW_COUNT) {
+      const message = `Export backups for no more than ${MAX_BULK_VIEW_COUNT} views at a time.`;
+      onLog(message, "error");
+      notifyError(message);
+      return;
+    }
+    setIsExportingBackup(true);
+    try {
+      const views = [];
+      await dvSvc.assertCurrentConnection();
+      for (const view of selectedViews) {
+        const sharing = await dvSvc.getViewAccess(view.id);
+        await dvSvc.assertCurrentConnection();
+        views.push({
+          id: view.id,
+          name: view.name,
+          table: { logicalName: view.entityName, displayName: view.tableName },
+          owner: { id: view.ownerId, name: view.ownerName },
+          sharing: sharing.map((principal) => ({
+          id: principal.id,
+          name: principal.name,
+          type: principal.principalType,
+          accessRightsMask: principal.accessRightsMask,
+          })),
+        });
+      }
+      await dvSvc.assertCurrentConnection();
+      const backup = {
+        format: "View Manager ownership and sharing backup",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        environment: { id: connection.id, name: connection.name, url: connection.url },
+        views,
+      };
+      const filename = `view-manager-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+      const savedPath = await window.toolboxAPI.fileSystem.saveFile(
+        filename,
+        JSON.stringify(backup, null, 2),
+        [{ name: "JSON", extensions: ["json"] }],
+      );
+      if (savedPath) notifySuccess(`Backup exported for ${views.length} selected ${views.length === 1 ? "view" : "views"}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to export the selected view backup.";
+      onLog(message, "error");
+      notifyError(message);
+    } finally {
+      setIsExportingBackup(false);
+    }
+  }, [connection, dvSvc, vm.selectedViews, isExportingBackup, onLog, notifyError, notifySuccess]);
 
   const beginChangeOwner = useCallback(() => {
     try {
@@ -429,7 +487,7 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
         aria-labelledby={`${tabsId}-personal`}
         hidden={vm.activeTab !== "personal"}
       >
-      <ViewStudioHeader
+      <ViewManagerHeader
         activeUsers={vm.activeUsers}
         selectedOwnerId={vm.selectedOwnerId}
         tables={vm.tables}
@@ -451,6 +509,10 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
           || vm.accessNavigationLocked || vm.isLoadingPersonalViews || vm.isLoadingUsers}
         onCopyViews={beginCopyViews}
         onCopyViewsToEnvironment={beginCopyPersonalViewsToEnvironment}
+        exportBackupDisabled={!connection || vm.selectedViews.length === 0 || vm.selectedViews.length > MAX_BULK_VIEW_COUNT
+          || vm.accessNavigationLocked || isExportingBackup
+          || vm.isLoadingPersonalViews || vm.isLoadingViewAccess}
+        onExportBackup={exportBackup}
       />
       {!connection ? (
         <MessageBar>No active Dataverse connection. Connect to an environment to view personal views.</MessageBar>
@@ -479,7 +541,9 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
           <ViewAccessPanel
             key={vm.selectedView?.id ?? "none"}
             selectedView={vm.selectedView}
+            targetEnvironment={primaryEnvironment}
             access={vm.displayedViewAccess}
+            pendingChanges={vm.accessChangePreview}
             isLoading={vm.isLoadingViewAccess}
             error={vm.viewAccessError}
             hasChanges={vm.hasAccessChanges}
@@ -500,6 +564,7 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
       {connection && vm.ownerChangeViews.length > 0 && (
         <ViewOwnerDialog
           views={vm.ownerChangeViews}
+          targetEnvironment={primaryEnvironment}
           remainingCount={vm.pendingOwnerChangeViews.length}
           lockedOwnerId={vm.ownerChangeOwnerId}
           users={vm.availableViewOwners}
@@ -511,7 +576,8 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
       )}
       {connection && vm.bulkAccessViews.length > 0 && (
         <AddViewUsersDialog
-          viewCount={vm.bulkAccessViews.length}
+          viewNames={vm.bulkAccessViews.map((view) => view.name)}
+          targetEnvironment={primaryEnvironment}
           users={vm.activeUsers}
           isSaving={vm.isSavingBulkAccess}
           inputsLocked={vm.bulkAccessTotal > 0}
@@ -525,6 +591,7 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
       {connection && vm.copySystemViews.isOpen && (
         <CopySystemViewsDialog
           copies={vm.copySystemViews.copies}
+          targetEnvironment={primaryEnvironment}
           solutions={vm.copySystemViews.solutions}
           isLoadingSolutions={vm.copySystemViews.isLoadingSolutions}
           solutionsError={vm.copySystemViews.solutionsError}
@@ -582,6 +649,7 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
           sourceCount={crossEnvironmentCopyKind === "personal"
             ? vm.crossEnvironmentCopy.personalSources.length
             : vm.crossEnvironmentCopy.systemSources.length}
+          sourceEnvironment={primaryEnvironment}
           sourceViews={crossEnvironmentCopyKind === "personal"
             ? vm.crossEnvironmentCopy.personalSources
             : vm.crossEnvironmentCopy.systemSources}
@@ -623,6 +691,7 @@ export const ViewStudio = observer((props: ViewStudioProps): React.JSX.Element =
       {connection && vm.copySystemViewToPersonal.isOpen && (
         <CopySystemViewToPersonalDialog
           copies={vm.copySystemViewToPersonal.copies}
+          targetEnvironment={primaryEnvironment}
           users={vm.activeUsers}
           selectedOwnerId={vm.copySystemViewToPersonal.selectedOwnerId}
           lockedOwnerId={vm.copySystemViewToPersonal.lockedOwnerId}
