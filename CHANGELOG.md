@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/LinkeD365/ViewManager/compare/0.3.0...0.4.0) (2026-10-15)
+
+
+### Features
+
+* Add View Manager component with functionality for managing pers… ([222e6f5](https://github.com/LinkeD365/ViewManager/commit/222e6f5b3065f4d55937fe49cf20efd4b73a6448))
+* Add View Manager component with functionality for managing personal and system views ([65029ed](https://github.com/LinkeD365/ViewManager/commit/65029edaeb46a2d7bf28de646b49808022010679))
+
 ## [0.3.0](https://github.com/LinkeD365/ViewStudio/compare/0.2.0...0.3.0) (2026-10-14)
 
 
