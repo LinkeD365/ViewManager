@@ -1,0 +1,6 @@
+export const FETCH_PAGE_SIZE = 5000;
+export const MAX_FETCH_PAGES = 20;
+export const MAX_FETCH_RECORDS = FETCH_PAGE_SIZE * MAX_FETCH_PAGES;
+export const MAX_BULK_VIEW_COUNT = 100;
+export const MAX_BULK_ACCESS_CHANGES = 500;
+export const MAX_CROSS_ENVIRONMENT_COPIES = 500;

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { observer } from "mobx-react";
-import { Button, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, makeStyles, MessageBar, Option, Spinner, tokens } from "@fluentui/react-components";
+import { Button, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, makeStyles, MessageBar, Option, Spinner, Text, tokens } from "@fluentui/react-components";
 import type { CopySystemViewToPersonalDialogProps } from "../model/viewModel";
 
 const useStyles = makeStyles({
@@ -15,10 +15,11 @@ const useStyles = makeStyles({
 });
 
 export const CopySystemViewToPersonalDialog = observer(({
-  copies, users, selectedOwnerId, lockedOwnerId, isCopying, error, onOwnerChange, onCopy, onCancel,
+  copies, targetEnvironment, users, selectedOwnerId, lockedOwnerId, isCopying, error, onOwnerChange, onCopy, onCancel,
 }: CopySystemViewToPersonalDialogProps): React.JSX.Element => {
   const styles = useStyles();
   const [search, setSearch] = useState("");
+  const [confirming, setConfirming] = useState(false);
   const completed = copies.filter((copy) => copy.completed).length;
   const selectedOwner = users.find((user) => user.id === (lockedOwnerId ?? selectedOwnerId));
   const visibleUsers = users.filter((user) =>
@@ -29,15 +30,27 @@ export const CopySystemViewToPersonalDialog = observer(({
         <DialogBody>
           <DialogTitle>Copy {copies.length} system {copies.length === 1 ? "view" : "views"} to personal views</DialogTitle>
           <DialogContent className={styles.content}>
+            <MessageBar>Target environment: {targetEnvironment}</MessageBar>
             <p>Create a private copy of each selected view. The original system views will not be changed.</p>
-            <Field label="New owner" required>
+            <p>Copy up to 100 views per operation.</p>
+            {confirming && (
+              <>
+                <Text weight="semibold">Review before copying</Text>
+                <p>{copies.length} private {copies.length === 1 ? "copy" : "copies"} will be created for {selectedOwner?.name}.</p>
+                <MessageBar intent="warning">Closing this form will not remove views already created.</MessageBar>
+                <ul className={styles.progress}>
+                  {copies.map((copy) => <li key={copy.personalViewId}>{copy.source.name} ({copy.source.tableName})</li>)}
+                </ul>
+              </>
+            )}
+            {!confirming && <Field label="New owner" required>
               <Combobox
                 aria-label="Owner of personal views"
                 inlinePopup
                 placeholder="Type to find an active user"
                 value={search || selectedOwner?.name || ""}
                 selectedOptions={selectedOwner ? [selectedOwner.id] : []}
-                disabled={isCopying || lockedOwnerId !== null}
+                disabled={isCopying || lockedOwnerId !== null || confirming}
                 onChange={(event) => {
                   setSearch(event.target.value);
                   onOwnerChange(null);
@@ -50,7 +63,7 @@ export const CopySystemViewToPersonalDialog = observer(({
                 {visibleUsers.map((user) => <Option key={user.id} value={user.id}>{user.name}</Option>)}
                 {visibleUsers.length === 0 && <Option disabled>No matching active users</Option>}
               </Combobox>
-            </Field>
+            </Field>}
             <p aria-live="polite">{completed} of {copies.length} views copied.</p>
             <ul className={styles.progress}>
               {copies.map((copy) => (
@@ -63,10 +76,19 @@ export const CopySystemViewToPersonalDialog = observer(({
             {isCopying && <Spinner size="tiny" label="Copying views..." />}
           </DialogContent>
           <DialogActions>
-            <Button appearance="primary" disabled={isCopying || !selectedOwner} onClick={() => void onCopy()}>
-              {error ? "Retry remaining copies" : "Copy views"}
+            <Button
+              appearance="primary"
+              disabled={isCopying || !selectedOwner}
+              onClick={() => {
+                if (!confirming && !error) setConfirming(true);
+                else void onCopy();
+              }}
+            >
+              {error ? "Retry remaining copies" : confirming ? "Confirm and copy views" : "Review copy"}
             </Button>
-            <Button disabled={isCopying} onClick={onCancel}>{error ? "Close" : "Cancel"}</Button>
+            <Button disabled={isCopying} onClick={() => confirming && !lockedOwnerId ? setConfirming(false) : onCancel()}>
+              {confirming && !lockedOwnerId ? "Back" : error ? "Close" : "Cancel"}
+            </Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

@@ -1,9 +1,24 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
-  createBulkAccessModel, createCopyModel, createCopyService, unmanagedSolution, viewDefinition,
-  view, secondView, user,
+  ViewModel, createBulkAccessModel, createCopyModel, createCopyService, unmanagedSolution, viewDefinition,
+  view, secondView, systemView, user,
 } = require("./helpers.cjs");
+
+test("view-copy workflows reject scopes above 100 before opening", () => {
+  const personalViews = Array.from({ length: 101 }, (_, index) => ({ ...view, id: `personal-${index}` }));
+  const personalModel = createBulkAccessModel(personalViews);
+  assert.throws(() => personalModel.beginCopySystemViews(), /no more than 100 views/);
+  assert.equal(personalModel.copySystemViews.isOpen, false);
+
+  const systemViews = Array.from({ length: 101 }, (_, index) => ({ ...systemView, id: `system-${index}` }));
+  const systemModel = new ViewModel();
+  systemModel.activeTab = "system";
+  systemModel.systemViews = systemViews;
+  systemModel.selectedSystemViews = systemViews;
+  assert.throws(() => systemModel.beginCopySystemViewToPersonal(), /no more than 100 views/);
+  assert.equal(systemModel.copySystemViewToPersonal.isOpen, false);
+});
 
 test("copy is enabled for one or more selections and locks navigation while open", () => {
   for (const selected of [[view], [view, secondView]]) {

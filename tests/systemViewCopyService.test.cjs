@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createService, viewId, unmanagedSolution, viewDefinition } = require("./helpers.cjs");
+const { createService, dvService, viewId, user, unmanagedSolution, viewDefinition } = require("./helpers.cjs");
 
 const solutionRecord = {
   solutionid: unmanagedSolution.id,
@@ -44,7 +44,26 @@ test("malformed solution results and query failures are logged and rejected", as
   service.dvApi.fetchXmlQuery = async () => { throw new Error("Read solution denied"); };
   await assert.rejects(service.getUnmanagedSolutions(), /Read solution denied/);
   assert.equal(logs.length, 7);
-  assert.ok(logs.every(([message, level]) => level === "error" && message.includes("unmanaged solutions") && message.includes("FetchXML")));
+  assert.ok(logs.every(([message, level]) => level === "error"
+    && message.includes("unmanaged solutions") && !message.includes("FetchXML")));
+});
+
+test("writes are refused if the captured connection no longer matches its slot", async () => {
+  let writes = 0;
+  const connection = { id: "connection-1", url: "https://example.crm.dynamics.com" };
+  const service = new dvService({
+    connection,
+    connectionTarget: 0,
+    validateConnection: async () => false,
+    onLog: () => {},
+    dvApi: {
+      create: async () => { writes++; },
+      execute: async () => { writes++; },
+    },
+  });
+  await assert.rejects(service.createPersonalView(viewId, viewDefinition, user.id), /environment changed/);
+  await assert.rejects(service.addSystemViewToSolution(viewId, unmanagedSolution.uniqueName), /environment changed/);
+  assert.equal(writes, 0);
 });
 
 test("personal definition copies supported layout fields without ownership or personal IDs", async () => {

@@ -1,10 +1,11 @@
 {
-  "name": "@linked365/pptb-viewstudio",
-  "version": "0.3.0",
-  "displayName": "View Studio",
+  "name": "@linked365/pptb-view-manager",
+  "version": "0.3.1",
+  "displayName": "View Manager",
   "description": "A Power Platform ToolBox tool that allows users to manage and copy personal and system views in Dataverse.",
-  "icon": "Linked365Logo.svg",
+  "icon": "viewManagerLogo.svg",
   "features": {
+    "minAPI": "1.2.7",
     "connections": {
       "min": 1,
       "max": 7
@@ -19,15 +20,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/LinkeD365/ViewStudio"
+    "url": "https://github.com/LinkeD365/ViewManager"
   },
   "configurations": {
-    "repository": "https://github.com/LinkeD365/ViewStudio",
+    "repository": "https://github.com/LinkeD365/ViewManager",
     "website": "https://linked365.blog",
     "readmeUrl": "https://raw.githubusercontent.com/LinkeD365/ViewStudio/main/README.md"
   },
   "bugs": {
-    "url": "https://github.com/LinkeD365/ViewStudio/issues"
+    "url": "https://github.com/LinkeD365/ViewManager/issues"
   },
   "license": "MIT",
   "engines": {
@@ -62,6 +63,7 @@
   },
   "files": [
     "dist",
+    "public/view-manager-screenshot.png",
     "IMPLEMENTATION.md",
     "npm-shrinkwrap.json"
   ]

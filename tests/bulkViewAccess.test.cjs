@@ -4,6 +4,7 @@ const {
   dvService,
   viewId,
   user,
+  team,
   newUser,
   anotherUser,
   view,
@@ -44,6 +45,7 @@ test("direct sharing lookup rejects invalid IDs, malformed masks and API errors 
     onLog: (...entry) => logs.push(entry),
     dvApi: { fetchXmlQuery: async () => { calls++; return { value: [{ accessrightsmask: mask }] }; } },
   });
+
   await assert.rejects(service.getUserViewAccessMask("invalid", newUser.id), /ID is invalid/);
   await assert.rejects(service.getUserViewAccessMask(viewId, "invalid"), /ID is invalid/);
   assert.equal(calls, 0);
@@ -52,10 +54,46 @@ test("direct sharing lookup rejects invalid IDs, malformed masks and API errors 
     await assert.rejects(service.getUserViewAccessMask(viewId, newUser.id), /invalid direct sharing access mask/);
   }
   assert.equal(logs.length, 9);
-  assert.ok(logs.every(([message, level]) => level === "error" && message.includes("FetchXML:")));
+  assert.ok(logs.every(([message, level]) => level === "error" && !message.includes("FetchXML:")));
   service.dvApi.fetchXmlQuery = async () => { throw new Error("Read denied"); };
   await assert.rejects(service.getUserViewAccessMask(viewId, newUser.id), /Read denied/);
   assert.match(logs.at(-1)[0], /user view access.*Read denied/);
+});
+
+test("view sharing listing follows paging cookies to export every principal", async () => {
+  const queries = [];
+  const service = new dvService({
+    connection: null,
+    onLog: () => {},
+    dvApi: {
+      fetchXmlQuery: async (query) => {
+        queries.push(query);
+        return queries.length === 1
+          ? {
+            value: [{
+              principalid: user.id,
+              principaltypecode: "systemuser",
+              accessrightsmask: user.accessRightsMask,
+              "systemuser.fullname": user.name,
+            }],
+            "@Microsoft.Dynamics.CRM.fetchxmlpagingcookie": '<cookie page="1"><principalobjectaccess principalid="a" /></cookie>',
+          }
+          : {
+            value: [{
+              principalid: team.id,
+              principaltypecode: "team",
+              accessrightsmask: team.accessRightsMask,
+              "team.name": team.name,
+            }],
+          };
+      },
+    },
+  });
+  const access = await service.getViewAccess(viewId);
+  assert.deepEqual(access.map(({ id }) => id), [user.id, team.id]);
+  assert.equal(queries.length, 2);
+  assert.match(queries[0], /count="5000" page="1"/);
+  assert.match(queries[1], /paging-cookie="&lt;cookie page=&quot;1&quot;&gt;/);
 });
 
 test("Add users starts with no writes and locks selection, refresh, owner changes and other access edits", async () => {
@@ -99,6 +137,36 @@ test("bulk access validates users and permissions before submitting any work", a
   assert.equal(vm.bulkAccessTotal, 0);
   assert.equal(vm.pendingBulkAccess.length, 0);
   assert.equal(vm.isSavingBulkAccess, false);
+});
+
+test("bulk access rejects oversized view and user/view scopes before making writes", async () => {
+  const views = Array.from({ length: 100 }, (_, index) => ({ ...view, id: `view-${index}` }));
+  const vm = createBulkAccessModel(views);
+  vm.activeUsers = Array.from({ length: 6 }, (_, index) => ({
+    id: `user-${index}`, name: `User ${index}`, isCurrentUser: false,
+  }));
+  vm.selectedViews = views;
+  vm.personalViews = views;
+  vm.beginAddUsersToViews();
+  let serviceCalls = 0;
+  await assert.rejects(
+    vm.saveBulkViewAccess({
+      getUserViewAccessMask: async () => { serviceCalls++; return 0; },
+      grantViewAccess: async () => { serviceCalls++; },
+      updateViewAccess: async () => { serviceCalls++; },
+      getPersonalViews: async () => { serviceCalls++; return views; },
+    }, vm.activeUsers.map((user) => user.id), 1),
+    /500-change limit/,
+  );
+  assert.equal(serviceCalls, 0);
+  assert.equal(vm.bulkAccessTotal, 0);
+
+  vm.cancelBulkAccess();
+  const tooManyViews = Array.from({ length: 101 }, (_, index) => ({ ...view, id: `too-many-${index}` }));
+  vm.personalViews = tooManyViews;
+  vm.selectedViews = tooManyViews;
+  assert.throws(() => vm.beginAddUsersToViews(), /no more than 100 views/);
+  assert.equal(vm.bulkAccessViews.length, 0);
 });
 
 test("bulk access grants new shares and replaces existing masks exactly for every selected user/view pair", async () => {

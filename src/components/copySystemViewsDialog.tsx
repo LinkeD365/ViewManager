@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { observer } from "mobx-react";
-import { Button, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, makeStyles, MessageBar, Option, Spinner, tokens } from "@fluentui/react-components";
+import { Button, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, makeStyles, MessageBar, Option, Spinner, Text, tokens } from "@fluentui/react-components";
 import type { CopySystemViewsDialogProps } from "../model/viewModel";
 
 const useStyles = makeStyles({
@@ -10,12 +10,13 @@ const useStyles = makeStyles({
 });
 
 export const CopySystemViewsDialog = observer(({
-  copies, solutions, isLoadingSolutions, solutionsError, isCopying, lockedSolution, error,
+  copies, targetEnvironment, solutions, isLoadingSolutions, solutionsError, isCopying, lockedSolution, error,
   onRetrySolutions, onCopy, onCancel,
 }: CopySystemViewsDialogProps): React.JSX.Element => {
   const styles = useStyles();
   const [search, setSearch] = useState("");
   const [uniqueName, setUniqueName] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const selected = solutions.find((solution) => solution.uniqueName === (lockedSolution ?? uniqueName));
   const visibleSolutions = solutions.filter((solution) =>
     `${solution.name} ${solution.uniqueName} ${solution.version}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
@@ -26,7 +27,21 @@ export const CopySystemViewsDialog = observer(({
         <DialogBody>
           <DialogTitle>Copy {copies.length} personal views to system views</DialogTitle>
           <DialogContent className={styles.content}>
+            <MessageBar>Target environment: {targetEnvironment}</MessageBar>
             <p>Copies keep the original names, filters and layouts. Your personal views and their sharing remain unchanged.</p>
+            <p>Copy up to 100 views per operation.</p>
+            {confirming && (
+              <>
+                <Text weight="semibold">Review before copying</Text>
+                <p>{copies.length} personal {copies.length === 1 ? "view" : "views"} will be created as public system views in {selected?.name} ({selected?.uniqueName}).</p>
+                <MessageBar intent="warning">
+                  Closing this form will not remove created views or undo solution additions.
+                </MessageBar>
+                <ul className={styles.progress}>
+                  {copies.map((copy) => <li key={copy.systemViewId}>{copy.source.name} ({copy.source.tableName})</li>)}
+                </ul>
+              </>
+            )}
             <MessageBar intent="warning">
               Copies are public system views, not private shares. Access depends on users' security roles.
               They will not replace default views. Review and publish from the chosen solution as needed;
@@ -39,7 +54,7 @@ export const CopySystemViewsDialog = observer(({
                 placeholder="Search solutions"
                 value={search || (selected ? `${selected.name} (${selected.uniqueName})` : "")}
                 selectedOptions={selected ? [selected.uniqueName] : []}
-                disabled={isLoadingSolutions || isCopying || lockedSolution !== null || !!solutionsError}
+                disabled={isLoadingSolutions || isCopying || confirming || lockedSolution !== null || !!solutionsError}
                 onChange={(event) => { setSearch(event.target.value); setUniqueName(null); }}
                 onOptionSelect={(_event, data) => { setUniqueName(data.optionValue ?? null); setSearch(""); }}
               >
@@ -87,11 +102,20 @@ export const CopySystemViewsDialog = observer(({
             <Button
               appearance="primary"
               disabled={!selected || isLoadingSolutions || !!solutionsError || isCopying}
-              onClick={() => { if (selected) void onCopy(selected.uniqueName); }}
+              onClick={() => {
+                if (!selected) return;
+                if (!confirming) setConfirming(true);
+                else void onCopy(selected.uniqueName);
+              }}
             >
-              {error ? "Retry remaining copies" : "Copy views"}
+              {error && confirming ? "Retry remaining copies" : confirming ? "Confirm and copy views" : "Review copy"}
             </Button>
-            <Button disabled={isCopying} onClick={onCancel}>{lockedSolution ? "Close" : "Cancel"}</Button>
+            <Button
+              disabled={isCopying}
+              onClick={() => confirming && !lockedSolution ? setConfirming(false) : onCancel()}
+            >
+              {confirming && !lockedSolution ? "Back" : lockedSolution ? "Close" : "Cancel"}
+            </Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

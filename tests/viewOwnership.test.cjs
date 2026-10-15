@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  ViewModel,
   viewId,
   user,
   newUser,
@@ -30,6 +31,15 @@ test("change owner sends Assign with typed view and user and logs invalid reques
   const denied = createService(async () => { throw new Error("Assign privilege required"); });
   await assert.rejects(denied.service.changeViewOwner(viewId, newUser.id), /Assign privilege required/);
   assert.match(denied.logs[0][0], /Assign.*Assign privilege required/);
+});
+
+test("owner changes reject more than 100 selected views", () => {
+  const views = Array.from({ length: 101 }, (_, index) => ({ ...view, id: `owner-${index}` }));
+  const vm = new ViewModel();
+  vm.personalViews = views;
+  vm.selectedViews = views;
+  assert.throws(() => vm.beginChangeViewOwner(), /no more than 100 views/);
+  assert.equal(vm.ownerChangeViews.length, 0);
 });
 
 test("missing user-view read role shows a friendly assignment error and retains technical logs", async () => {

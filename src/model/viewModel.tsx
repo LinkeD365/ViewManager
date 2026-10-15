@@ -2,6 +2,7 @@ import { makeAutoObservable, runInAction } from "mobx";
 import { CopySystemViewsModel } from "./copySystemViewsModel";
 import { CopySystemViewsToPersonalModel } from "./copySystemViewsToPersonalModel";
 import { CrossEnvironmentCopyModel } from "./crossEnvironmentCopyModel";
+import { MAX_BULK_ACCESS_CHANGES, MAX_BULK_VIEW_COUNT } from "./operationLimits";
 
 export interface ActiveUser {
   id: string;
@@ -13,6 +14,7 @@ export interface EnvironmentTargetOption {
   slot: number;
   name: string;
   environment: string;
+  url: string;
 }
 
 export interface ViewTable {
@@ -32,7 +34,7 @@ export interface PersonalView {
 }
 
 export type SystemView = Pick<PersonalView, "id" | "name" | "entityName" | "tableName" | "modifiedOn" | "description">;
-export type ViewStudioTab = "personal" | "system";
+export type ViewManagerTab = "personal" | "system";
 
 export interface UnmanagedSolution {
   id: string;
@@ -100,6 +102,7 @@ export interface CrossEnvironmentDestination extends EnvironmentTargetOption {
 
 export interface CrossEnvironmentCopyDialogProps {
   kind: CrossEnvironmentCopyKind;
+  sourceEnvironment: string;
   sourceCount: number;
   sourceViews: Array<Pick<PersonalView, "id" | "name" | "tableName">>;
   targets: EnvironmentTargetOption[];
@@ -182,6 +185,7 @@ export interface ViewDataService {
   createPersonalView(viewId: string, definition: SystemViewDefinition, ownerId: string): Promise<void>;
   addSystemViewToSolution(viewId: string, solutionUniqueName: string): Promise<void>;
   getViewAccess(viewId: string): Promise<ViewAccess[]>;
+  assertCurrentConnection(): Promise<void>;
   getUserViewAccessMask(viewId: string, userId: string): Promise<number>;
   updateViewAccess(viewId: string, principal: ViewAccess, mask: number): Promise<void>;
   grantViewAccess(viewId: string, principal: ViewAccess, mask: number): Promise<void>;
@@ -193,9 +197,13 @@ export interface dvServiceProps {
   dvApi: DataverseAPI.API;
   onLog: (message: string, type?: "info" | "success" | "warning" | "error") => void;
   connectionTarget?: ToolBoxAPI.ConnectionTarget;
+  validateConnection?: (
+    connection: ToolBoxAPI.DataverseConnection,
+    target: ToolBoxAPI.ConnectionTarget | undefined,
+  ) => Promise<boolean>;
 }
 
-export interface ViewStudioProps {
+export interface ViewManagerProps {
   connections: Array<ToolBoxAPI.DataverseConnection | null>;
   connectionServices: Array<ViewDataService | null>;
   vm: ViewModel;
@@ -204,7 +212,7 @@ export interface ViewStudioProps {
   notifySuccess: (message: string) => void;
 }
 
-export interface ViewStudioHeaderProps {
+export interface ViewManagerHeaderProps {
   activeUsers: ActiveUser[];
   selectedOwnerId: string | null;
   tables: ViewTable[];
@@ -216,11 +224,13 @@ export interface ViewStudioHeaderProps {
   addUsersDisabled: boolean;
   copyViewsDisabled: boolean;
   copyToEnvironmentDisabled: boolean;
+  exportBackupDisabled: boolean;
   selectedViewCount: number;
   onChangeOwner: () => void;
   onAddUsers: () => void;
   onCopyViews: () => void;
   onCopyViewsToEnvironment: () => void;
+  onExportBackup: () => Promise<void>;
   onOwnerChange: (ownerId: string | null) => void;
   onTableChange: (logicalName: string) => void;
   onRefresh: () => Promise<void>;
@@ -256,6 +266,7 @@ export interface SystemViewsProps {
 
 export interface CopySystemViewToPersonalDialogProps {
   copies: PersonalViewCopy[];
+  targetEnvironment: string;
   users: ActiveUser[];
   selectedOwnerId: string | null;
   lockedOwnerId: string | null;
@@ -268,6 +279,7 @@ export interface CopySystemViewToPersonalDialogProps {
 
 export interface ViewOwnerDialogProps {
   views: PersonalView[];
+  targetEnvironment: string;
   remainingCount: number;
   lockedOwnerId: string | null;
   users: ActiveUser[];
@@ -279,6 +291,7 @@ export interface ViewOwnerDialogProps {
 
 export interface CopySystemViewsDialogProps {
   copies: SystemViewCopy[];
+  targetEnvironment: string;
   solutions: UnmanagedSolution[];
   isLoadingSolutions: boolean;
   solutionsError: string | null;
@@ -296,7 +309,8 @@ export interface BulkViewAccessTarget {
 }
 
 export interface AddViewUsersDialogProps {
-  viewCount: number;
+  viewNames: string[];
+  targetEnvironment: string;
   users: ActiveUser[];
   isSaving: boolean;
   inputsLocked: boolean;
@@ -309,7 +323,9 @@ export interface AddViewUsersDialogProps {
 
 export interface ViewAccessPanelProps {
   selectedView: PersonalView | null;
+  targetEnvironment: string;
   access: ViewAccess[];
+  pendingChanges: AccessChangePreview[];
   isLoading: boolean;
   error: string | null;
   hasChanges: boolean;
@@ -324,6 +340,14 @@ export interface ViewAccessPanelProps {
   onAddUser: () => boolean;
   onSelectUser: (userId: string) => void;
   onCancelUser: () => void;
+}
+
+export interface AccessChangePreview {
+  principalName: string;
+  principalType: "User" | "Team";
+  action: "Grant" | "Update" | "Revoke";
+  currentRights: string;
+  requestedRights: string;
 }
 
 export interface NewViewAccessRow {
@@ -348,7 +372,7 @@ export class ViewModel {
   copySystemViews = new CopySystemViewsModel();
   copySystemViewToPersonal = new CopySystemViewsToPersonalModel();
   crossEnvironmentCopy = new CrossEnvironmentCopyModel();
-  activeTab: ViewStudioTab = "personal";
+  activeTab: ViewManagerTab = "personal";
   systemViews: SystemView[] = [];
   selectedSystemViews: SystemView[] = [];
   selectedSystemTableLogicalName: string | null = null;
@@ -425,10 +449,13 @@ export class ViewModel {
     const ids = new Set(this.selectedViews.map((view) => view.id));
     const views = this.personalViews.filter((view) => ids.has(view.id));
     if (views.length !== ids.size) throw new Error("Select views from the current view listing.");
+    if (views.length > MAX_BULK_VIEW_COUNT) {
+      throw new Error(`Select no more than ${MAX_BULK_VIEW_COUNT} views per operation.`);
+    }
     this.copySystemViews.begin(views);
   }
 
-  setActiveTab(tab: ViewStudioTab): void {
+  setActiveTab(tab: ViewManagerTab): void {
     if (this.accessNavigationLocked) return;
     this.activeTab = tab;
   }
@@ -510,6 +537,9 @@ export class ViewModel {
     const ids = new Set(this.selectedViews.map((view) => view.id));
     const views = this.personalViews.filter((view) => ids.has(view.id));
     if (views.length !== ids.size) throw new Error("Select views from the current view listing.");
+    if (views.length > MAX_BULK_VIEW_COUNT) {
+      throw new Error(`Select no more than ${MAX_BULK_VIEW_COUNT} views per operation.`);
+    }
     this.resetBulkAccess();
     this.bulkAccessViews = views;
   }
@@ -539,6 +569,9 @@ export class ViewModel {
     const ids = new Set(userIds.map((id) => id.toLowerCase()));
     const users = this.activeUsers.filter((user) => ids.has(user.id.toLowerCase()));
     if (ids.size === 0 || users.length !== ids.size) throw new Error("Select one or more available users.");
+    if (this.bulkAccessViews.length * users.length > MAX_BULK_ACCESS_CHANGES) {
+      throw new Error(`This operation exceeds the ${MAX_BULK_ACCESS_CHANGES}-change limit. Select fewer views or users.`);
+    }
     if (!isEditableAccessMask(mask) || mask === 0 || (mask & ~selectableAccessRightsMask) !== 0) {
       throw new Error("Select at least one supported permission before applying access.");
     }
@@ -626,6 +659,9 @@ export class ViewModel {
     const currentViews = this.personalViews.filter((view) => ids.has(view.id));
     if (ids.size === 0 || currentViews.length !== ids.size) {
       throw new Error("Select views from the current view listing.");
+    }
+    if (currentViews.length > MAX_BULK_VIEW_COUNT) {
+      throw new Error(`Select no more than ${MAX_BULK_VIEW_COUNT} views per operation.`);
     }
     this.ownerChangeViews = currentViews;
     this.pendingOwnerChangeViews = currentViews;
@@ -738,6 +774,28 @@ export class ViewModel {
         })),
       ...this.newViewAccess,
     ];
+  }
+
+  get accessChangePreview(): AccessChangePreview[] {
+    const changed: AccessChangePreview[] = this.viewAccess
+      .filter((principal) => this.pendingAccess.has(`${principal.principalType}:${principal.id}`))
+      .map((principal) => {
+        const mask = this.pendingAccess.get(`${principal.principalType}:${principal.id}`) ?? 0;
+        return {
+          principalName: principal.name,
+          principalType: principal.principalType,
+          action: mask === 0 ? "Revoke" as const : "Update" as const,
+          currentRights: formatAccessRights(principal.accessRightsMask),
+          requestedRights: formatAccessRights(mask),
+        };
+      });
+    return [...changed, ...this.newViewAccess.map((principal) => ({
+      principalName: principal.name,
+      principalType: principal.principalType,
+      action: "Grant" as const,
+      currentRights: "None",
+      requestedRights: formatAccessRights(principal.accessRightsMask),
+    }))];
   }
 
   get availableAccessUsers(): ActiveUser[] {

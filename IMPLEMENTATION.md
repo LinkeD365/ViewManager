@@ -1,10 +1,10 @@
-# ViewStudio technical implementation
+# View Manager technical implementation
 
-For application usage, see the [ViewStudio user guide](README.md).
+For application usage, see the [View Manager user guide](README.md).
 
 ## Stack and host
 
-ViewStudio uses React 18, TypeScript, Fluent UI v9, MobX and AG Grid Community.
+View Manager uses React 18, TypeScript, Fluent UI v9, MobX and AG Grid Community.
 It runs inside Power Platform ToolBox (PPTB), which supplies `toolboxAPI` and
 `dataverseAPI`. Dataverse requests use the host API, not manually managed access
 tokens.
@@ -12,8 +12,8 @@ tokens.
 ## Architecture
 
 - [App.tsx](src/App.tsx) obtains all configured connection slots and the theme,
-  constructs one targeted service per assigned slot, and supplies logging and
-  notification callbacks.
+  constructs one targeted service per assigned slot, and supplies logging,
+  notification and live connection-identity validation callbacks.
 - [viewModel.tsx](src/model/viewModel.tsx) owns application state, all application
   interfaces, the `ViewDataService` contract and access-rights definitions.
   It does not depend on the concrete Dataverse service.
@@ -27,8 +27,10 @@ tokens.
   handles same-type personal/system copies from primary to selected connection
   slots, with per-destination owners/solutions, stable IDs and partial retries.
 - [dataverseService.tsx](src/services/dataverseService.tsx) implements that
-  contract, constructs requests, maps responses and logs API failures.
-- [viewStudio.tsx](src/components/viewStudio.tsx) coordinates loading, user
+  contract, constructs requests, maps responses, follows FetchXML paging cookies,
+  validates the targeted connection immediately before writes and logs API failures
+  without writing sharing records or query payloads to the console.
+- [viewManager.tsx](src/components/viewManager.tsx) coordinates loading, user
   actions, the Personal/System tabs and the personal-view two-panel layout.
 
 Distinct UI areas are separate controls with focused display-data and callback
@@ -36,7 +38,7 @@ props:
 
 | Control | Responsibility |
 | --- | --- |
-| [ViewStudioHeader](src/components/viewStudioHeader.tsx) | Searchable owner/table filters and refresh action |
+| [ViewManagerHeader](src/components/viewManagerHeader.tsx) | Searchable owner/table filters and refresh action |
 | [PersonalViewsGrid](src/components/personalViewsGrid.tsx) | View columns, sorting, pagination and selection |
 | [SystemViews](src/components/systemViews.tsx) | Table-first system-view selection, refresh and copy action |
 | [ViewOwnerDialog](src/components/viewOwnerDialog.tsx) | Searchable new-owner selection and assignment confirmation |
@@ -61,6 +63,17 @@ The root `FluentProvider` sets `applyStylesToPortals={false}` so its full-screen
 layout classes are not copied to tooltip/dialog portal containers. Theme tokens
 are still provided, and tooltips use Fluent's default mounting behavior without
 per-control `document.body` overrides.
+
+Write dialogs identify the target environment and preview the affected views,
+owners, users, permissions or destination settings before submission. Single-view
+sharing changes require a separate confirmation that summarizes each grant,
+update or revocation. Before an ownership or sharing operation, users can export
+the selected personal views' ownership and all direct-sharing records to a
+user-chosen JSON file using `toolboxAPI.fileSystem.saveFile`. The backup includes
+the environment identity and export timestamp; the tool does not currently
+restore backups. Write dialogs warn when a target is Production and say that
+closing a form does not undo already-submitted changes. Every owner, sharing and
+copy batch is bounded before its first write.
 
 ## Reading Dataverse data
 
@@ -111,13 +124,23 @@ allows multiple selected rows; selection is cleared on table changes and
 refreshes. Its toolbar copy action is enabled only when one or more views are
 selected and no other edit or copy operation locks navigation.
 
+General FetchXML listings use 5,000-row pages and follow Dataverse paging cookies
+for up to 20 pages (100,000 records). Cookie values are XML-escaped before reuse;
+repeated cookies or the page bound fail explicitly rather than returning an
+incomplete listing.
 The sharing query uses object type `4230`, principal types `8` and `9`, outer
-joins to `systemuser` and `team`, `distinct`, `latematerialize`, a union filter
-hint and `top="51"`. Response mapping accepts both numeric principal types and
-the logical names `systemuser` and `team`. The UI warns when 51 rows are returned;
-it does not page beyond that limit.
+joins to `systemuser` and `team`, `distinct`, `latematerialize` and a union filter
+hint. Response mapping accepts both numeric principal types and the logical
+names `systemuser` and `team`.
 
 These are sharing records, not a complete effective-access calculation.
+
+Owner changes, backup exports and each copy workflow are limited to 100 selected
+views.
+Cross-environment copies are additionally limited to 500 total destination
+copies, and bulk user sharing is limited to 500 user/view pairs. These checks
+run before the first write; oversized scopes are rejected with an explicit
+message. Copy workflows remain sequential and report partial progress.
 
 ## Copying personal views to system views
 
@@ -439,8 +462,8 @@ Node command for focused suites.
 | [viewOwnership.test.cjs](tests/viewOwnership.test.cjs) | Assign payloads, friendly errors, owner dialog and assignment lifecycle |
 | [bulkViewOwnership.test.cjs](tests/bulkViewOwnership.test.cjs) | Multi-selection, bulk assignment, mixed owners and partial retries |
 | [viewFiltering.test.cjs](tests/viewFiltering.test.cjs) | Owner/table filters, metadata caching, numeric type codes and stale requests |
-| [systemViews.test.cjs](tests/systemViews.test.cjs) | Tab state/locks, table-first loading, saved-query requests, errors and stale responses |
-| [systemViewCopyService.test.cjs](tests/systemViewCopyService.test.cjs) | Unmanaged solutions, definition validation, stable-ID creation, solution-component payloads and logging |
+| [systemViews.test.cjs](tests/systemViews.test.cjs) | Tab state/locks, table-first loading, saved-query requests, paging cookies, errors and stale responses |
+| [systemViewCopyService.test.cjs](tests/systemViewCopyService.test.cjs) | Unmanaged solutions, definition validation, stable-ID creation, solution-component payloads, connection identity and logging |
 | [systemViewCopy.test.cjs](tests/systemViewCopy.test.cjs) | Selection gates, solution loading, sequential copying, partial retries and lost create responses |
 | [systemViewCopyLifecycle.test.cjs](tests/systemViewCopyLifecycle.test.cjs) | Duplicate submissions, cancellation, read failures and connection/unmount invalidation at every copy stage |
 | [personalViewCopy.test.cjs](tests/personalViewCopy.test.cjs) | Saved-query definition reads, userquery creation/existence checks, stable-ID retries and invalidation |
