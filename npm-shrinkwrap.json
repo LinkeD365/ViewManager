@@ -2528,9 +2528,10 @@
       }
     },
     "node_modules/mobx": {
-      "version": "7.0.6",
-      "resolved": "https://registry.npmjs.org/mobx/-/mobx-7.0.6.tgz",
-      "integrity": "sha512-VJwjVS5K/rojqPSOoDYlXaYl38Lj+gDfLOFeJ/3Pbdh5ITbAO4ks9RgL0TeRI0bydRZ7b/7WrtPPb9Onuj/pcA==",
+      "version": "7.1.5",
+      "resolved": "https://registry.npmjs.org/mobx/-/mobx-7.1.5.tgz",
+      "integrity": "sha512-m+fpkdEnE6NYxiFtUxS1xgfx2GG2j960LOCFvCso7EqWgmPkJQZWAVZQ62Xb9if6bbJXGRVQCoKjFmg1b+IwQg==",
+      "license": "MIT",
       "funding": {
         "type": "opencollective",
         "url": "https://opencollective.com/mobx"
